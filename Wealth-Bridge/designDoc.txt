@@ -1,0 +1,66 @@
+🌆 Project Design Document — Fall Edition
+Project Title: Wealth Bridge (Fall Prototype)
+Goal: To build an engaging, gamified financial education platform designed to help users in minority communities build credit, learn smart investing, and connect with mentors — all in a visually calming and seasonal Fall interface.
+1. Overview
+
+Purpose: Empower users with financial literacy through interactive, gamified, and personalized learning.
+
+Target Users: Young adults (18–35) in underserved communities seeking to improve credit, grow savings, or start investing.
+
+Core Features:
+
+Financial Education (Credit + Investing)
+
+Gamification via AI Agent (the “Wealth Navigator”)
+
+Mentorship Community
+
+Theme: Fall-inspired UI — warm, cozy, encouraging reflection and growth.
+
+2. Page Structure
+Page	Purpose	Core Elements
+Landing / Home Page	Introduce mission and capture attention.	Animated fall leaves background 🍂, soft gradient (amber → burnt orange), “Start Your Wealth Journey” CTA, short explainer video.
+Financial Education Page	Teach users about Credit and Smart Investing.	Two modules: “Credit Repair 101” and “Investing Basics”; progress bars; quizzes with gamified rewards.
+Credit Builder Dashboard	Track credit score improvements.	Card components showing score trends, tips section, personalized tasks.
+Smart Investing Simulator	Interactive mock investing platform.	Portfolio simulator using virtual currency; display risk/reward outcomes visually with fall leaf icons as currency tokens.
+Gamification (Agent)	Personalized AI assistant experience.	Chat-style AI guide offering tips, achievements, streak tracking, and motivational quotes. Avatar adjusts expressions with progress.
+Mentorship Hub	Connect users with real mentors.	Grid of mentor profiles, filters by area of interest, scheduling options, discussion rooms.
+Seasonal Dashboard / Achievements Page	Show user milestones.	Leaderboard with gold leaf badges 🥇, autumn tree that grows leaves as users complete tasks.
+3. Design & Color Palette (Fall Theme)
+Element	Color	Purpose
+Primary	#C85C0E (Pumpkin Orange)	Buttons, highlights
+Secondary	#8B4513 (Chestnut Brown)	Nav bars, text emphasis
+Accent	#F2C57C (Golden Wheat)	Icons, progress meters
+Background	#FFF8E7 (Cream Beige)	Page backgrounds
+Highlights	#6A4E23 (Dark Wood)	Dividers, headers
+Hover/Glow	#FFAC4A (Amber Glow)	Button hover states
+
+🖼️ Textures/Visuals:
+
+Subtle falling leaves animation on home and dashboard pages.
+
+Gradient overlay mimicking sunset tones.
+
+Rounded cards with soft shadows and frosted-glass blur.
+
+Fonts: Poppins (clean) + Merriweather (warm serif for headings).
+
+4. Interaction Flow
+
+User logs in → greeted by AI Wealth Navigator.
+
+Navigator asks user goals: (Credit, Investing, or Mentorship).
+
+Gamified Tasks unlocked daily (e.g., “Pay off 10% of a debt” or “Complete Investment Quiz”).
+
+Achievements visualized as growing autumn tree 🌳.
+
+Mentorship invitations pop up as users reach milestones (e.g., “Ready for next level? Meet your Mentor!”).
+
+5. Future Enhancements
+
+Winter theme switch (December) — snow effects, cooler tones.
+
+Integration with Plaid API for real credit tracking.
+
+AI voice companion with calm seasonal background music (fireplace crackle, rustling leaves).
