@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Fraunces:wght@400;600;700&display=swap');
 
 :root {
   --primary: #C85C0E;
@@ -40,13 +40,13 @@
 
 body {
   @apply bg-background text-secondary;
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Manrope', sans-serif;
   background-image: var(--background-gradient);
   background-attachment: fixed;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Merriweather', serif;
+  font-family: 'Fraunces', serif;
 }
 
 /* Frosted glass effect */
@@ -76,6 +76,30 @@ h1, h2, h3, h4, h5, h6 {
 
 .theme-winter body {
   animation: winterGlow 18s ease-in-out infinite;
+}
+
+.markdown-output h1,
+.markdown-output h2,
+.markdown-output h3 {
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+  color: var(--secondary);
+}
+
+.markdown-output p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-output ul,
+.markdown-output ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.markdown-output li {
+  margin-bottom: 0.25rem;
 }
 
 /* Custom scrollbar */

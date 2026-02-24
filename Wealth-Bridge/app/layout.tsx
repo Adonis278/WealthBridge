@@ -23,7 +23,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
         />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <AuthProvider>
           <ClientLayout>
             <Navbar />

@@ -38,6 +38,7 @@ const Navbar = () => {
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
+              const isCreditBuilder = item.href === '/credit-builder';
               return (
                 <Link
                   key={item.href}
@@ -45,11 +46,15 @@ const Navbar = () => {
                   className={`flex items-center space-x-1 px-4 py-2 rounded-lg transition-all ${
                     isActive
                       ? 'bg-primary text-white'
-                      : 'text-accent hover:bg-amber hover:text-secondary'
+                      : isCreditBuilder
+                        ? 'bg-white/80 text-secondary border border-amber hover:bg-white'
+                        : 'text-accent hover:bg-amber hover:text-secondary'
                   }`}
                 >
                   <Icon className="text-sm" />
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className={`text-sm font-medium ${isCreditBuilder ? 'font-semibold' : ''}`}>
+                    {item.label}
+                  </span>
                 </Link>
               );
             })}

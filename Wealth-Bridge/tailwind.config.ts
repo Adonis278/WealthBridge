@@ -17,8 +17,8 @@ const config: Config = {
         amber: "var(--amber)",
       },
       fontFamily: {
-        sans: ["Poppins", "sans-serif"],
-        serif: ["Merriweather", "serif"],
+        sans: ["Manrope", "sans-serif"],
+        serif: ["Fraunces", "serif"],
       },
       backgroundImage: {
         "gradient-fall": "linear-gradient(135deg, var(--amber) 0%, var(--primary) 100%)",
