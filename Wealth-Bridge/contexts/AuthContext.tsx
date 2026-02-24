@@ -10,9 +10,19 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+
+declare global {
+  interface Window {
+    recaptchaVerifier: RecaptchaVerifier;
+    confirmationResult: ConfirmationResult;
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -20,6 +30,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  setupRecaptcha: (phoneNumber: string) => Promise<ConfirmationResult>;
+  verifyOTP: (otp: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -103,6 +115,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInWithPopup(auth, provider);
   };
 
+  const setupRecaptcha = async (phoneNumber: string): Promise<ConfirmationResult> => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          // Reset reCAPTCHA if expired
+          window.recaptchaVerifier?.clear();
+          window.recaptchaVerifier = undefined as unknown as RecaptchaVerifier;
+        },
+      });
+    }
+    const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
+    window.confirmationResult = confirmationResult;
+    return confirmationResult;
+  };
+
+  const verifyOTP = async (otp: string) => {
+    if (window.confirmationResult) {
+      await window.confirmationResult.confirm(otp);
+    } else {
+      throw new Error('No confirmation result found. Please request OTP again.');
+    }
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
@@ -113,6 +152,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signUp,
     signIn,
     signInWithGoogle,
+    setupRecaptcha,
+    verifyOTP,
     logout,
   };
 

@@ -3,15 +3,18 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FaLeaf, FaGraduationCap, FaChartLine, FaCreditCard, FaUsers, FaTrophy, FaRobot, FaSignInAlt, FaSignOutAlt, FaUserCircle } from 'react-icons/fa';
+import { FaLeaf, FaSnowflake, FaGraduationCap, FaChartLine, FaCreditCard, FaUsers, FaTrophy, FaRobot, FaSignInAlt, FaSignOutAlt, FaUserCircle } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSeasonalTheme } from '@/components/SeasonalThemeProvider';
 
 const Navbar = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { theme } = useSeasonalTheme();
+  const SeasonIcon = theme === 'winter' ? FaSnowflake : FaLeaf;
 
   const navItems = [
-    { href: '/', label: 'Home', icon: FaLeaf },
+    { href: '/', label: 'Home', icon: SeasonIcon },
     { href: '/education', label: 'Learn', icon: FaGraduationCap },
     { href: '/credit-builder', label: 'Credit Builder', icon: FaCreditCard },
     { href: '/investing', label: 'Invest', icon: FaChartLine },
@@ -26,7 +29,7 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2 group">
-            <FaLeaf className="text-accent text-2xl group-hover:rotate-12 transition-transform" />
+            <SeasonIcon className="text-accent text-2xl group-hover:rotate-12 transition-transform" />
             <span className="text-accent font-serif text-xl font-bold">WealthBridge</span>
           </Link>
 

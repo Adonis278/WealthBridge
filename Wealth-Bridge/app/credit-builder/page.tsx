@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaCreditCard, FaArrowUp, FaArrowDown, FaCheckCircle, FaExclamationTriangle, FaLightbulb } from 'react-icons/fa';
+import { FaCreditCard, FaArrowUp, FaArrowDown, FaCheckCircle, FaExclamationTriangle, FaLightbulb, FaCloudUploadAlt, FaFileAlt, FaSnowflake } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCreditScore, updateCreditScore, completeTask } from '@/lib/creditService';
 import { addPoints } from '@/lib/gamificationService';
@@ -12,6 +12,19 @@ export default function CreditBuilderPage() {
   const [creditScore, setCreditScore] = useState(680);
   const [previousScore, setPreviousScore] = useState(650);
   const [loading, setLoading] = useState(true);
+  const [reportFileName, setReportFileName] = useState<string | null>(null);
+  const [reportAnalysis, setReportAnalysis] = useState<{
+    score?: number;
+    positives: string[];
+    warnings: string[];
+    recommendations: string[];
+  } | null>(null);
+  const [reportText, setReportText] = useState<string | null>(null);
+  const [llmAdvice, setLlmAdvice] = useState<string | null>(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
   const scoreChange = creditScore - previousScore;
 
   const creditFactors = [
@@ -110,6 +123,155 @@ export default function CreditBuilderPage() {
     if (status === 'excellent') return 'bg-green-500';
     if (status === 'good') return 'bg-amber';
     return 'bg-yellow-500';
+  };
+
+  const analyzeReportText = (text: string) => {
+    const normalized = text.replace(/\s+/g, ' ').toLowerCase();
+    const positives: string[] = [];
+    const warnings: string[] = [];
+    const recommendations: string[] = [];
+
+    const scoreMatch = normalized.match(/(?:credit score|score)\D{0,12}(\d{3})/);
+    const score = scoreMatch ? Number(scoreMatch[1]) : undefined;
+
+    const utilizationMatch = normalized.match(/utilization\D{0,10}(\d{1,3})%/);
+    if (utilizationMatch) {
+      const utilization = Number(utilizationMatch[1]);
+      if (utilization > 30) {
+        warnings.push(`Credit utilization appears high (${utilization}%).`);
+        recommendations.push('Aim to keep utilization under 30% by paying down balances.');
+      } else {
+        positives.push(`Credit utilization is healthy at ${utilization}%.`);
+      }
+    }
+
+    if (/late payment|past due|30 day|60 day|90 day/.test(normalized)) {
+      warnings.push('Late or past-due payments detected.');
+      recommendations.push('Set up autopay or reminders to avoid missed payments.');
+    } else {
+      positives.push('No late payment indicators found.');
+    }
+
+    if (/collection|charge[- ]?off|bankrupt|foreclosure|repossession/.test(normalized)) {
+      warnings.push('Collections or derogatory marks detected.');
+      recommendations.push('Dispute inaccuracies and negotiate settlements where possible.');
+    }
+
+    const inquiryCount = (normalized.match(/hard inquiry|inquiry/g) || []).length;
+    if (inquiryCount >= 4) {
+      warnings.push(`Multiple inquiries detected (${inquiryCount}).`);
+      recommendations.push('Limit new credit applications to reduce inquiry impact.');
+    }
+
+    if (/average age|credit age|oldest account/.test(normalized)) {
+      positives.push('Credit age information found—keep older accounts open when possible.');
+    }
+
+    if (positives.length === 0 && warnings.length === 0) {
+      recommendations.push('We could not detect key indicators. Consider uploading a detailed report or PDF export.');
+    }
+
+    if (typeof score === 'number') {
+      if (score >= 750) {
+        positives.push(`Score range detected: ${score} (Excellent).`);
+      } else if (score >= 670) {
+        positives.push(`Score range detected: ${score} (Good).`);
+        recommendations.push('Focus on lowering utilization to push into Excellent range.');
+      } else {
+        warnings.push(`Score range detected: ${score} (Fair).`);
+        recommendations.push('Pay on time and reduce balances to build momentum.');
+      }
+    }
+
+    return { score, positives, warnings, recommendations };
+  };
+
+  const extractPdfText = async (file: File) => {
+    const pdfjs = await import('pdfjs-dist');
+    const pdfjsLib: any = pdfjs;
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    }
+
+    const typedArray = new Uint8Array(await file.arrayBuffer());
+    const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+    let text = '';
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item: any) => item.str).join(' ');
+      text += `${pageText}\n`;
+    }
+
+    return text;
+  };
+
+  const handleReportUpload = async (file: File | null) => {
+    if (!file) return;
+    setReportError(null);
+    setReportAnalysis(null);
+    setReportText(null);
+    setLlmAdvice(null);
+    setLlmError(null);
+    setReportLoading(true);
+    setReportFileName(file.name);
+
+    try {
+      let text = '';
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        text = await extractPdfText(file);
+      } else {
+        text = await file.text();
+      }
+
+      if (!text || text.trim().length < 50) {
+        throw new Error('The report content looks empty. Please upload a full report.');
+      }
+
+      const trimmed = text.trim();
+      setReportText(trimmed);
+      setReportAnalysis(analyzeReportText(trimmed));
+    } catch (error) {
+      console.error('Report analysis failed:', error);
+      setReportError('We could not read that report. Try exporting as PDF or TXT and uploading again.');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const requestLlmAdvice = async () => {
+    if (!reportText) {
+      setLlmError('Upload a report first so we can generate advice.');
+      return;
+    }
+
+    setLlmLoading(true);
+    setLlmError(null);
+    setLlmAdvice(null);
+
+    try {
+      const response = await fetch('/api/credit-report-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: reportText.slice(0, 12000),
+          score: reportAnalysis?.score ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate advice.');
+      }
+
+      const data = await response.json();
+      setLlmAdvice(data.advice ?? 'No advice generated.');
+    } catch (error) {
+      console.error('LLM advice failed:', error);
+      setLlmError('We could not generate advice right now. Please try again.');
+    } finally {
+      setLlmLoading(false);
+    }
   };
 
   return (
@@ -295,6 +457,148 @@ export default function CreditBuilderPage() {
             </div>
           </motion.div>
         </div>
+
+        {/* Credit Report Upload */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="frosted-glass rounded-2xl p-8 shadow-xl mb-8"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div>
+              <h3 className="text-2xl font-bold text-secondary mb-2 font-serif">
+                Upload Your Credit Report
+              </h3>
+              <p className="text-darkwood">
+                Drop a PDF or TXT report to get instant insights. Analysis runs in your browser.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 text-sm text-primary">
+              <FaSnowflake />
+              <span>Private, secure, and local</span>
+            </div>
+          </div>
+
+          <div className="mt-6 grid lg:grid-cols-2 gap-6">
+            <label className="relative border-2 border-dashed border-amber rounded-2xl p-6 flex flex-col items-center justify-center text-center bg-white/80 hover:border-primary transition-all cursor-pointer">
+              <FaCloudUploadAlt className="text-4xl text-primary mb-3" />
+              <span className="font-semibold text-secondary">Click to upload</span>
+              <span className="text-sm text-darkwood mt-2">PDF, TXT, or CSV</span>
+              <input
+                type="file"
+                accept=".pdf,.txt,.csv"
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                onChange={(event) => handleReportUpload(event.target.files?.[0] ?? null)}
+              />
+              {reportFileName && (
+                <div className="mt-4 flex items-center space-x-2 text-sm text-primary">
+                  <FaFileAlt />
+                  <span>{reportFileName}</span>
+                </div>
+              )}
+            </label>
+
+            <div className="bg-white/80 rounded-2xl p-6 shadow-inner">
+              {reportLoading && (
+                <div className="flex flex-col items-center justify-center text-center h-full">
+                  <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-primary border-t-transparent"></div>
+                  <p className="mt-3 text-darkwood">Analyzing your report...</p>
+                </div>
+              )}
+
+              {!reportLoading && reportError && (
+                <div className="text-red-600 font-medium">{reportError}</div>
+              )}
+
+              {!reportLoading && !reportError && !reportAnalysis && (
+                <div className="text-darkwood">
+                  Upload a report to see personalized insights and recommendations.
+                </div>
+              )}
+
+              {!reportLoading && reportAnalysis && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-darkwood">Detected Score</div>
+                    <div className="text-2xl font-bold text-secondary">
+                      {reportAnalysis.score ?? 'N/A'}
+                    </div>
+                  </div>
+
+                  {reportAnalysis.positives.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-green-700 mb-2">Positive Signals</h4>
+                      <ul className="space-y-2 text-sm text-green-700">
+                        {reportAnalysis.positives.map((item, index) => (
+                          <li key={`positive-${index}`} className="flex items-start space-x-2">
+                            <FaCheckCircle className="mt-0.5" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {reportAnalysis.warnings.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-amber mb-2">Areas to Improve</h4>
+                      <ul className="space-y-2 text-sm text-amber">
+                        {reportAnalysis.warnings.map((item, index) => (
+                          <li key={`warning-${index}`} className="flex items-start space-x-2">
+                            <FaExclamationTriangle className="mt-0.5" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {reportAnalysis.recommendations.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-primary mb-2">Recommended Actions</h4>
+                      <ul className="space-y-2 text-sm text-darkwood">
+                        {reportAnalysis.recommendations.map((item, index) => (
+                          <li key={`rec-${index}`} className="flex items-start space-x-2">
+                            <FaLightbulb className="text-primary mt-0.5" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="pt-4 border-t border-amber/30">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-secondary">AI Financial Advice</h4>
+                        <p className="text-xs text-darkwood">
+                          Uses your report details to suggest next best actions.
+                        </p>
+                      </div>
+                      <button
+                        onClick={requestLlmAdvice}
+                        disabled={llmLoading}
+                        className="bg-primary hover:bg-amber text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all disabled:opacity-70"
+                      >
+                        {llmLoading ? 'Generating...' : 'Generate Advice'}
+                      </button>
+                    </div>
+
+                    {llmError && (
+                      <div className="mt-3 text-sm text-red-600">{llmError}</div>
+                    )}
+
+                    {llmAdvice && (
+                      <div className="mt-3 p-4 bg-white/80 rounded-xl text-sm text-darkwood whitespace-pre-line">
+                        {llmAdvice}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
 
         {/* Tips Section */}
         <motion.div

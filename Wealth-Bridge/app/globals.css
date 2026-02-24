@@ -11,11 +11,38 @@
   --background: #FFF8E7;
   --darkwood: #6A4E23;
   --amber: #FFAC4A;
+  --background-gradient: radial-gradient(1200px circle at 20% 10%, rgba(255, 172, 74, 0.25), transparent 55%),
+    radial-gradient(1000px circle at 80% 20%, rgba(200, 92, 14, 0.2), transparent 60%);
+}
+
+.theme-fall {
+  --primary: #C85C0E;
+  --secondary: #8B4513;
+  --accent: #F2C57C;
+  --background: #FFF8E7;
+  --darkwood: #6A4E23;
+  --amber: #FFAC4A;
+  --background-gradient: radial-gradient(1200px circle at 20% 10%, rgba(255, 172, 74, 0.25), transparent 55%),
+    radial-gradient(1000px circle at 80% 20%, rgba(200, 92, 14, 0.2), transparent 60%);
+}
+
+.theme-winter {
+  --primary: #3A6EA5;
+  --secondary: #1F3A5F;
+  --accent: #CDEBFF;
+  --background: #F3F8FF;
+  --darkwood: #20314D;
+  --amber: #9DD6FF;
+  --background-gradient: radial-gradient(1200px circle at 15% 15%, rgba(157, 214, 255, 0.45), transparent 55%),
+    radial-gradient(900px circle at 85% 10%, rgba(58, 110, 165, 0.35), transparent 60%),
+    radial-gradient(1000px circle at 50% 80%, rgba(31, 58, 95, 0.25), transparent 60%);
 }
 
 body {
   @apply bg-background text-secondary;
   font-family: 'Poppins', sans-serif;
+  background-image: var(--background-gradient);
+  background-attachment: fixed;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -35,20 +62,36 @@ h1, h2, h3, h4, h5, h6 {
   transition: all 0.2s ease-in-out;
 }
 
+@keyframes winterGlow {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+
+.theme-winter body {
+  animation: winterGlow 18s ease-in-out infinite;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #FFF8E7;
+  background: var(--background);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #C85C0E;
+  background: var(--primary);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8B4513;
+  background: var(--secondary);
 }

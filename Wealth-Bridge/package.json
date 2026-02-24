@@ -14,7 +14,8 @@
     "next": "^15.0.0",
     "framer-motion": "^11.0.0",
     "react-icons": "^5.0.0",
-    "firebase": "^11.0.2"
+    "firebase": "^11.0.2",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

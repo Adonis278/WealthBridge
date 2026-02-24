@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "wealthbridge",
     "public": "out",
     "ignore": [
       "firebase.json",
