@@ -13,9 +13,8 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCreditScore } from '@/lib/creditService';
 import { addPoints } from '@/lib/gamificationService';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
 
@@ -50,12 +49,12 @@ interface AiResult {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GOALS = [
-  { type: 'buy_home' as GoalType, label: 'Buy a Home', icon: FaHome, gradient: 'from-orange-500 to-red-500' },
-  { type: 'finance_car' as GoalType, label: 'Finance a Car', icon: FaCar, gradient: 'from-blue-500 to-indigo-600' },
-  { type: 'premium_card' as GoalType, label: 'Premium Credit Card', icon: FaCreditCard, gradient: 'from-purple-500 to-pink-600' },
-  { type: 'rent_apartment' as GoalType, label: 'Rent an Apartment', icon: FaBuilding, gradient: 'from-teal-500 to-cyan-600' },
-  { type: 'business_funding' as GoalType, label: 'Business Funding', icon: FaBriefcase, gradient: 'from-amber-500 to-orange-600' },
-  { type: 'improve_score' as GoalType, label: 'Improve Score Generally', icon: FaChartLine, gradient: 'from-green-500 to-emerald-600' },
+  { type: 'buy_home' as GoalType, label: 'Buy a Home', icon: FaHome, gradient: 'from-primary to-secondary' },
+  { type: 'finance_car' as GoalType, label: 'Finance a Car', icon: FaCar, gradient: 'from-darkwood to-secondary' },
+  { type: 'premium_card' as GoalType, label: 'Premium Credit Card', icon: FaCreditCard, gradient: 'from-amber to-primary' },
+  { type: 'rent_apartment' as GoalType, label: 'Rent an Apartment', icon: FaBuilding, gradient: 'from-secondary to-darkwood' },
+  { type: 'business_funding' as GoalType, label: 'Business Funding', icon: FaBriefcase, gradient: 'from-primary to-darkwood' },
+  { type: 'improve_score' as GoalType, label: 'Improve Score Generally', icon: FaChartLine, gradient: 'from-accent to-amber' },
 ];
 
 const DEADLINES = [
@@ -132,8 +131,6 @@ export default function CreditBuilderPage() {
     aiResult?.credit_summary?.score_band ??
     (displayScore >= 800 ? 'Exceptional' : displayScore >= 740 ? 'Very Good' : displayScore >= 670 ? 'Good' : displayScore >= 580 ? 'Fair' : 'Poor');
   const modeLabel = displayScore < 580 ? 'Rebuild Mode' : displayScore > 760 ? 'Optimization Mode' : 'Build Mode';
-  const modeBadgeColor =
-    displayScore < 580 ? 'bg-red-100 text-red-700' : displayScore > 760 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700';
 
   const dtiPct =
     aiResult?.goal_alignment?.dti_percent ??
@@ -147,22 +144,22 @@ export default function CreditBuilderPage() {
   const readinessPct = aiResult?.goal_alignment?.readiness_score_percent ?? null;
 
   function getScoreColor(s: number) {
-    if (s >= 740) return 'text-green-400';
-    if (s >= 670) return 'text-amber-300';
-    if (s >= 580) return 'text-orange-300';
-    return 'text-red-400';
+    if (s >= 740) return 'text-accent';
+    if (s >= 670) return 'text-amber';
+    if (s >= 580) return 'text-amber';
+    return 'text-red-300';
   }
 
   function getImpactColor(level: string) {
     if (level === 'High') return 'text-red-600 bg-red-50 border-red-200';
-    if (level === 'Medium') return 'text-amber-600 bg-amber-50 border-amber-200';
-    return 'text-green-600 bg-green-50 border-green-200';
+    if (level === 'Medium') return 'text-darkwood bg-amber/20 border-amber';
+    return 'text-primary bg-primary/10 border-primary/30';
   }
 
   function getFactorBarColor(current: number, ideal: number) {
-    if (current >= ideal) return 'bg-green-400';
-    if (current >= ideal * 0.6) return 'bg-amber-400';
-    return 'bg-red-400';
+    if (current >= ideal) return 'bg-primary';
+    if (current >= ideal * 0.6) return 'bg-amber';
+    return 'bg-secondary';
   }
 
   // ── Load credit score from Firebase ──────────────────────────────────────
@@ -239,12 +236,9 @@ export default function CreditBuilderPage() {
       setReportText(trimmed);
       const analysis = analyzeReportText(trimmed);
       setReportAnalysis(analysis);
-      // Upload to Firebase Storage
-      const storageRef = ref(storage, `credit-reports/${user.uid}/${Date.now()}-${file.name}`);
-      await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' });
-      const fileUrl = await getDownloadURL(storageRef);
+      // Save report metadata to Firestore (no raw-file upload — avoids browser CORS)
       const docRef = await addDoc(collection(db, 'creditReports'), {
-        userId: user.uid, fileName: file.name, fileUrl, score: analysis.score ?? null, createdAt: serverTimestamp(),
+        userId: user.uid, fileName: file.name, score: analysis.score ?? null, createdAt: serverTimestamp(),
       });
       setReportUploadId(docRef.id);
       await addDoc(collection(db, 'creditReportAnalyses'), { reportId: docRef.id, analysis, createdAt: serverTimestamp() });
@@ -427,22 +421,22 @@ export default function CreditBuilderPage() {
                       stage === n
                         ? 'bg-primary text-white shadow-lg ring-4 ring-primary/20'
                         : stage > n
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-200 text-gray-400'
+                        ? 'bg-secondary text-white'
+                        : 'bg-accent/40 text-darkwood'
                     }`}
                   >
                     {stage > n ? <FaCheck className="text-xs" /> : n}
                   </div>
                   <span
                     className={`text-[11px] mt-1 font-semibold ${
-                      stage === n ? 'text-primary' : stage > n ? 'text-green-600' : 'text-gray-400'
+                      stage === n ? 'text-primary' : stage > n ? 'text-secondary' : 'text-darkwood/50'
                     }`}
                   >
                     {label}
                   </span>
                 </div>
                 {i < 2 && (
-                  <div className={`h-0.5 w-14 md:w-24 mx-1 mb-4 ${stage > n ? 'bg-green-400' : 'bg-gray-200'}`} />
+                  <div className={`h-0.5 w-14 md:w-24 mx-1 mb-4 ${stage > n ? 'bg-secondary' : 'bg-accent/40'}`} />
                 )}
               </React.Fragment>
             ))}
@@ -583,14 +577,14 @@ export default function CreditBuilderPage() {
             {/* Consent strip */}
             <div
               className={`frosted-glass rounded-2xl p-5 border-2 transition-all ${
-                agreementAccepted ? 'border-green-300 bg-green-50/40' : 'border-amber'
+                agreementAccepted ? 'border-primary/50 bg-primary/5' : 'border-amber'
               }`}
             >
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-start space-x-3">
                   <div
                     className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      agreementAccepted ? 'bg-green-500' : 'bg-amber/20'
+                      agreementAccepted ? 'bg-primary' : 'bg-amber/20'
                     }`}
                   >
                     {agreementAccepted
@@ -644,7 +638,7 @@ export default function CreditBuilderPage() {
                       <div className="flex items-center justify-center space-x-2 text-primary text-sm">
                         <FaFileAlt />
                         <span className="font-medium">{reportFileName}</span>
-                        <FaCheckCircle className="text-green-500" />
+                        <FaCheckCircle className="text-primary" />
                       </div>
                     ) : (
                       <>
@@ -699,8 +693,8 @@ export default function CreditBuilderPage() {
               <div className="frosted-glass rounded-2xl p-6 flex flex-col justify-between border border-amber/40">
                 <div>
                   <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                      <FaShieldAlt className="text-blue-500 text-lg" />
+                    <div className="w-10 h-10 rounded-xl bg-accent/30 flex items-center justify-center">
+                      <FaShieldAlt className="text-secondary text-lg" />
                     </div>
                     <div>
                       <div className="font-bold text-secondary text-sm">Soft Pull Credit Check</div>
@@ -714,7 +708,7 @@ export default function CreditBuilderPage() {
                       'Requires Experian API integration',
                     ].map(item => (
                       <li key={item} className="flex items-center space-x-2">
-                        <FaCheck className="text-green-500 flex-shrink-0" />
+                        <FaCheck className="text-primary flex-shrink-0" />
                         <span>{item}</span>
                       </li>
                     ))}
@@ -729,7 +723,7 @@ export default function CreditBuilderPage() {
                   <button
                     onClick={requestSoftPull}
                     disabled={softPullLoading || !user}
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold py-3 rounded-xl transition-all"
+                    className="w-full bg-secondary hover:bg-darkwood disabled:opacity-50 text-white text-sm font-semibold py-3 rounded-xl transition-all"
                   >
                     {softPullLoading ? 'Requesting…' : 'Request Soft Pull'}
                   </button>
@@ -813,16 +807,16 @@ export default function CreditBuilderPage() {
                     const monthly = parseFloat(financialContext.annualIncome) / 12;
                     const debt = parseFloat(financialContext.monthlyDebt);
                     const dti = monthly > 0 && !isNaN(debt) ? Math.round((debt / monthly) * 100) : 0;
-                    const barColor = dti < 28 ? 'bg-green-400' : dti < 43 ? 'bg-amber-400' : 'bg-red-400';
+                    const barColor = dti < 28 ? 'bg-primary' : dti < 43 ? 'bg-amber' : 'bg-red-400';
                     const statusLabel = dti < 28 ? 'Excellent' : dti < 36 ? 'Good' : dti < 43 ? 'Manageable' : 'High Risk';
-                    const textColor = dti < 28 ? 'text-green-600' : dti < 36 ? 'text-amber-600' : dti < 43 ? 'text-orange-600' : 'text-red-600';
+                    const textColor = dti < 28 ? 'text-primary' : dti < 36 ? 'text-amber' : dti < 43 ? 'text-darkwood' : 'text-red-600';
                     return (
                       <>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-darkwood font-medium">Debt-to-Income Ratio</span>
                           <span className={`text-sm font-bold ${textColor}`}>{dti}% — {statusLabel}</span>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className="w-full bg-accent/20 rounded-full h-3">
                           <div className={`${barColor} h-3 rounded-full transition-all`} style={{ width: `${Math.min(dti, 100)}%` }} />
                         </div>
                         <div className="flex justify-between text-[10px] text-darkwood mt-1.5">
@@ -870,7 +864,7 @@ export default function CreditBuilderPage() {
             {/* Dashboard top bar */}
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <span className={`text-xs font-bold px-3 py-1 rounded-full ${modeBadgeColor}`}>{modeLabel}</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-primary/10 text-primary">{modeLabel}</span>
                 <span className="text-xs text-darkwood hidden md:block">
                   Goal: {GOALS.find(g => g.type === goalType)?.label ?? 'General'} ·
                   Deadline: {deadlineMonths === 'flexible' ? 'Flexible' : `${deadlineMonths} months`} ·
@@ -914,7 +908,7 @@ export default function CreditBuilderPage() {
                     <div className="text-white/70 text-sm mt-1">
                       in {aiResult?.credit_summary?.projection_timeline_months ?? 6} months
                     </div>
-                    <div className="text-green-300 font-bold mt-1">
+                    <div className="text-accent font-bold mt-1">
                       +{projectedScore - displayScore} pts potential
                     </div>
                   </div>
@@ -964,7 +958,7 @@ export default function CreditBuilderPage() {
                       </div>
                       <div className="flex items-center space-x-2">
                         {data.estimated_score_gain && !data.estimated_score_gain.startsWith('0') && (
-                          <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                          <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/30">
                             +{data.estimated_score_gain}
                           </span>
                         )}
@@ -975,7 +969,7 @@ export default function CreditBuilderPage() {
                     </div>
                     {/* Progress bar */}
                     <div className="flex items-center space-x-3 mb-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2.5">
+                      <div className="flex-1 bg-accent/20 rounded-full h-2.5">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${data.current}%` }}
@@ -1006,7 +1000,7 @@ export default function CreditBuilderPage() {
                         <circle cx="18" cy="18" r="15.5" fill="none" stroke="#f0f0f0" strokeWidth="3.5" />
                         <motion.circle
                           cx="18" cy="18" r="15.5" fill="none"
-                          stroke={readinessPct >= 70 ? '#22c55e' : readinessPct >= 45 ? '#f59e0b' : '#ef4444'}
+                          stroke={readinessPct >= 70 ? '#C85C0E' : readinessPct >= 45 ? '#FFAC4A' : '#ef4444'}
                           strokeWidth="3.5"
                           strokeDasharray={`${readinessPct} 100`}
                           strokeLinecap="round"
@@ -1024,7 +1018,7 @@ export default function CreditBuilderPage() {
                       {aiResult?.goal_alignment?.notes ?? 'Follow the action plan below to improve your readiness score.'}
                     </p>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-center">
-                      {[['<45%', 'Build First', 'bg-red-50 text-red-600'], ['45–70%', 'Almost Ready', 'bg-amber-50 text-amber-600'], ['>70%', 'Ready', 'bg-green-50 text-green-600']].map(([range, label, cls]) => (
+                      {[['<45%', 'Build First', 'bg-secondary/10 text-secondary'], ['45–70%', 'Almost Ready', 'bg-amber/20 text-darkwood'], ['>70%', 'Ready', 'bg-primary/10 text-primary']].map(([range, label, cls]) => (
                         <div key={range} className={`rounded-lg p-1.5 ${cls}`}>
                           <div className="font-bold">{range}</div>
                           <div>{label}</div>
@@ -1047,7 +1041,7 @@ export default function CreditBuilderPage() {
                         <div className="text-xs text-darkwood mb-1">Debt-to-Income Ratio</div>
                         <span
                           className={`text-4xl font-black ${
-                            dtiPct >= 43 ? 'text-red-500' : dtiPct >= 36 ? 'text-amber-500' : 'text-green-500'
+                            dtiPct >= 43 ? 'text-red-500' : dtiPct >= 36 ? 'text-amber' : 'text-primary'
                           }`}
                         >
                           {dtiPct}%
@@ -1055,24 +1049,24 @@ export default function CreditBuilderPage() {
                       </div>
                       <span
                         className={`text-xs font-bold px-2 py-1 rounded-full ${
-                          dtiPct >= 43 ? 'bg-red-100 text-red-700' : dtiPct >= 36 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                          dtiPct >= 43 ? 'bg-red-100 text-red-700' : dtiPct >= 36 ? 'bg-amber/20 text-darkwood' : 'bg-primary/10 text-primary'
                         }`}
                       >
                         {dtiPct < 28 ? 'Excellent' : dtiPct < 36 ? 'Good' : dtiPct < 43 ? 'Manageable' : 'High Risk'}
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
+                    <div className="w-full bg-accent/20 rounded-full h-3 mb-3">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min(dtiPct, 100)}%` }}
                         transition={{ duration: 1 }}
-                        className={`h-3 rounded-full ${dtiPct >= 43 ? 'bg-red-400' : dtiPct >= 36 ? 'bg-amber-400' : 'bg-green-400'}`}
+                        className={`h-3 rounded-full ${dtiPct >= 43 ? 'bg-red-400' : dtiPct >= 36 ? 'bg-amber' : 'bg-primary'}`}
                       />
                     </div>
                     <div className="space-y-1.5 text-xs text-darkwood">
-                      <div className="flex justify-between"><span>Ideal (best rates)</span><span className="font-semibold text-green-600">&lt; 28%</span></div>
-                      <div className="flex justify-between"><span>Lender maximum</span><span className="font-semibold text-amber-600">43%</span></div>
-                      <div className="flex justify-between"><span>Your ratio</span><span className={`font-bold ${dtiPct >= 43 ? 'text-red-600' : dtiPct >= 36 ? 'text-amber-600' : 'text-green-600'}`}>{dtiPct}%</span></div>
+                      <div className="flex justify-between"><span>Ideal (best rates)</span><span className="font-semibold text-primary">&lt; 28%</span></div>
+                      <div className="flex justify-between"><span>Lender maximum</span><span className="font-semibold text-amber">43%</span></div>
+                      <div className="flex justify-between"><span>Your ratio</span><span className={`font-bold ${dtiPct >= 43 ? 'text-red-600' : dtiPct >= 36 ? 'text-amber' : 'text-primary'}`}>{dtiPct}%</span></div>
                     </div>
                   </>
                 ) : (
@@ -1095,7 +1089,7 @@ export default function CreditBuilderPage() {
                     <div
                       key={phase}
                       className={`rounded-xl border overflow-hidden ${
-                        idx === 0 ? 'border-primary/40' : idx === 1 ? 'border-amber/50' : 'border-gray-200'
+                        idx === 0 ? 'border-primary/40' : idx === 1 ? 'border-amber/50' : 'border-accent/40'
                       }`}
                     >
                       <button
@@ -1107,7 +1101,7 @@ export default function CreditBuilderPage() {
                         <div className="flex items-center space-x-3">
                           <div
                             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                              idx === 0 ? 'bg-primary text-white' : idx === 1 ? 'bg-amber text-white' : 'bg-gray-200 text-gray-600'
+                              idx === 0 ? 'bg-primary text-white' : idx === 1 ? 'bg-amber text-white' : 'bg-accent/30 text-darkwood'
                             }`}
                           >
                             {idx + 1}
@@ -1195,12 +1189,12 @@ export default function CreditBuilderPage() {
 
             {/* ── Edge Case: Optimization Mode ── */}
             {displayScore > 760 && (
-              <div className="rounded-2xl p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 shadow-md">
-                <h3 className="text-lg font-bold text-green-700 font-serif mb-2">✨ Optimization Mode — Maximize Your Score</h3>
-                <p className="text-sm text-green-600 mb-4">
+              <div className="rounded-2xl p-6 bg-gradient-to-r from-amber/10 to-accent/20 border border-amber shadow-md">
+                <h3 className="text-lg font-bold text-secondary font-serif mb-2">✨ Optimization Mode — Maximize Your Score</h3>
+                <p className="text-sm text-darkwood mb-4">
                   Your score is excellent. Shift focus to protecting and capitalizing on your credit strength:
                 </p>
-                <ul className="space-y-2 text-sm text-green-700">
+                <ul className="space-y-2 text-sm text-secondary">
                   {[
                     'Apply for premium rewards cards (travel, cash-back, business perks)',
                     'Request credit limit increases on existing cards every 6 months',
@@ -1209,7 +1203,7 @@ export default function CreditBuilderPage() {
                     'Use credit for regular purchases and pay in full every cycle',
                   ].map(item => (
                     <li key={item} className="flex items-start space-x-2">
-                      <FaCheck className="text-green-500 flex-shrink-0 mt-0.5" />
+                      <FaCheck className="text-primary flex-shrink-0 mt-0.5" />
                       <span>{item}</span>
                     </li>
                   ))}
