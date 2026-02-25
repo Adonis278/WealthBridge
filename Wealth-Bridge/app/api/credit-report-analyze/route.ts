@@ -41,7 +41,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'LLM API key not configured.' }, { status: 500 });
     }
 
-    const prompt = `You are a helpful financial coach. Analyze the provided credit report text and return concise, actionable advice.\n\nReturn the response in Markdown with the following sections:\n- Summary (2-3 sentences)\n- Key red flags (bullets)\n- Recommendations (5-7 bullets)\n- 3 credit-building options (numbered list)\n- 3-6 month score projection (short paragraph)\n\nRequirements:\n- Mention any red flags and how to resolve them.\n- If a score is provided, tailor advice to the score range.\n- Include a projection of how the score could change in 3-6 months if the user follows the plan.\n- Provide up to 3 clear options for credit-building paths (example: secured card, credit builder loan, rent reporting).\n- Keep the tone supportive and professional.\n- Consider the user profile answers when crafting advice.\n\nScore: ${score ?? 'Unknown'}\n\nUser profile:\n${JSON.stringify(profile, null, 2)}\n\nReport text:\n${text}`;
+    const financialContext = body?.financialContext ?? {};
+    const prompt = `You are a certified credit strategy engine. Analyze the credit report and financial context provided. Return ONLY valid JSON — no explanations, no markdown code blocks, no extra text outside the JSON.
+
+Return JSON exactly matching this schema:
+{
+  "credit_summary": {
+    "current_score": <number, use detected score or estimate>,
+    "score_band": <"Poor"|"Fair"|"Good"|"Very Good"|"Exceptional">,
+    "projected_score": <number, realistic 6-month projection if user follows plan>,
+    "projection_timeline_months": <number>
+  },
+  "factor_analysis": {
+    "payment_history": { "current": <0-100>, "ideal": 100, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range> points", "recommendation": "<action>" },
+    "utilization": { "current": <0-100>, "ideal": 30, "impact_level": "High", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
+    "credit_age": { "current": <0-100>, "ideal": 80, "impact_level": "Medium", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
+    "credit_mix": { "current": <0-100>, "ideal": 70, "impact_level": "Low", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
+    "new_credit": { "current": <0-100>, "ideal": 80, "impact_level": "Low", "estimated_score_gain": "<range> points", "recommendation": "<action>" }
+  },
+  "goal_alignment": {
+    "readiness_score_percent": <0-100>,
+    "dti_percent": <number or null>,
+    "notes": "<1-2 sentence goal readiness note>"
+  },
+  "risk_alerts": ["<alert string>", ...],
+  "action_plan": [
+    { "phase": "Month 1-2", "steps": ["<step>", ...] },
+    { "phase": "Month 3-4", "steps": ["<step>", ...] },
+    { "phase": "Month 5-6", "steps": ["<step>", ...] }
+  ]
+}
+
+Score: ${score ?? 'Unknown'}
+Goal: ${JSON.stringify(profile, null, 2)}
+Financial Context: ${JSON.stringify(financialContext, null, 2)}
+Report text:
+${text}`;
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -52,11 +87,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'You are a certified credit counselor.' },
+          { role: 'system', content: 'You are a certified credit strategy engine. You only respond with valid JSON. No extra text.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 450,
+        max_tokens: 1400,
+        response_format: { type: 'json_object' },
       }),
     });
 
@@ -68,6 +104,14 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     const advice = data?.choices?.[0]?.message?.content?.trim() ?? '';
 
+    // Parse JSON result; fall back gracefully
+    let result: Record<string, unknown> | null = null;
+    try {
+      result = JSON.parse(advice);
+    } catch {
+      result = null;
+    }
+
     if (reportId && advice) {
       await addDoc(collection(db, 'creditReportAdvice'), {
         reportId,
@@ -76,7 +120,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ advice });
+    return NextResponse.json({ advice, result });
   } catch (error) {
     console.error('LLM analyze route error:', error);
     return NextResponse.json({ error: 'Unexpected server error.' }, { status: 500 });

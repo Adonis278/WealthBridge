@@ -71,7 +71,7 @@ export const getCreditScore = async (userId: string) => {
     return { success: true, data: null };
   } catch (error) {
     console.error('Error getting credit score:', error);
-    return { success: false, error };
+    return { success: true, data: null, warning: 'Credit data unavailable right now.' };
   }
 };
 

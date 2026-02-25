@@ -30,7 +30,10 @@ const Navbar = () => {
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2 group">
             <SeasonIcon className="text-accent text-2xl group-hover:rotate-12 transition-transform" />
-            <span className="text-accent font-serif text-xl font-bold">WealthBridge</span>
+            <div className="leading-tight">
+              <div className="text-white font-serif text-xl font-bold">WealthBridge</div>
+              <div className="text-white text-[10px] uppercase tracking-[0.2em]">Powered by RMA</div>
+            </div>
           </Link>
 
           {/* Navigation Links */}

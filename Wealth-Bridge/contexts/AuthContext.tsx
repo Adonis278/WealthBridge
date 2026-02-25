@@ -14,7 +14,7 @@ import {
   signInWithPhoneNumber,
   ConfirmationResult,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 
 declare global {
@@ -50,34 +50,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
-
-      // Create user document if it doesn't exist
-      if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName || 'New User',
-            photoURL: user.photoURL || '',
-            createdAt: serverTimestamp(),
-            level: 1,
-            points: 0,
-            streak: 0,
-            lastLoginDate: serverTimestamp(),
-          });
-        } else {
-          // Update last login date
-          await setDoc(userDocRef, {
-            lastLoginDate: serverTimestamp(),
-          }, { merge: true });
-        }
-      }
     });
 
     return unsubscribe;

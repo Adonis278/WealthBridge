@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { executeRecaptcha } from '@/lib/recaptcha';
@@ -84,8 +85,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-sunset flex items-center justify-center py-12 px-4">
-      <motion.div
+    <>
+      <Script
+        src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
+        strategy="afterInteractive"
+      />
+      <div className="min-h-screen bg-gradient-sunset flex items-center justify-center py-12 px-4">
+        <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full"
@@ -265,7 +271,8 @@ export default function LoginPage() {
             <span>Protected by reCAPTCHA Enterprise</span>
           </div>
         </div>
-      </motion.div>
-    </div>
+        </motion.div>
+      </div>
+    </>
   );
 }

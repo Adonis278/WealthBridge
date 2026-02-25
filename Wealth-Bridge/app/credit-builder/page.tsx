@@ -1,1065 +1,1249 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { FaCreditCard, FaArrowUp, FaArrowDown, FaCheckCircle, FaExclamationTriangle, FaLightbulb, FaCloudUploadAlt, FaFileAlt, FaSnowflake, FaShieldAlt, FaLink, FaTimes } from 'react-icons/fa';
-import ReactMarkdown from 'react-markdown';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  FaCreditCard, FaCheckCircle, FaExclamationTriangle, FaCloudUploadAlt, FaFileAlt,
+  FaShieldAlt, FaLink, FaTimes, FaHome, FaCar, FaBuilding, FaBriefcase,
+  FaChartLine, FaChevronDown, FaChevronUp, FaArrowRight, FaLock,
+  FaDollarSign, FaUserTie, FaMoneyBillWave, FaBolt, FaCheck,
+} from 'react-icons/fa';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
-import { getCreditScore, updateCreditScore, completeTask } from '@/lib/creditService';
+import { getCreditScore } from '@/lib/creditService';
 import { addPoints } from '@/lib/gamificationService';
 import { db, storage } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
+const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type GoalType = 'buy_home' | 'finance_car' | 'premium_card' | 'rent_apartment' | 'business_funding' | 'improve_score';
+
+interface FinancialContext {
+  occupation: string;
+  annualIncome: string;
+  monthlyDebt: string;
+  rentMortgage: string;
+  totalCreditLimit: string;
+  savings: string;
+  selfEmployed: boolean;
+}
+
+interface FactorData {
+  current: number;
+  ideal: number;
+  impact_level: string;
+  estimated_score_gain: string;
+  recommendation: string;
+}
+
+interface AiResult {
+  credit_summary: { current_score: number; score_band: string; projected_score: number; projection_timeline_months: number };
+  factor_analysis: Record<string, FactorData>;
+  goal_alignment: { readiness_score_percent: number; dti_percent?: number | null; notes?: string };
+  risk_alerts: string[];
+  action_plan: Array<{ phase: string; steps: string[] }>;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const GOALS = [
+  { type: 'buy_home' as GoalType, label: 'Buy a Home', icon: FaHome, gradient: 'from-orange-500 to-red-500' },
+  { type: 'finance_car' as GoalType, label: 'Finance a Car', icon: FaCar, gradient: 'from-blue-500 to-indigo-600' },
+  { type: 'premium_card' as GoalType, label: 'Premium Credit Card', icon: FaCreditCard, gradient: 'from-purple-500 to-pink-600' },
+  { type: 'rent_apartment' as GoalType, label: 'Rent an Apartment', icon: FaBuilding, gradient: 'from-teal-500 to-cyan-600' },
+  { type: 'business_funding' as GoalType, label: 'Business Funding', icon: FaBriefcase, gradient: 'from-amber-500 to-orange-600' },
+  { type: 'improve_score' as GoalType, label: 'Improve Score Generally', icon: FaChartLine, gradient: 'from-green-500 to-emerald-600' },
+];
+
+const DEADLINES = [
+  { value: '3', label: '3 Months', sublabel: 'Urgent' },
+  { value: '6', label: '6 Months', sublabel: 'Standard' },
+  { value: '12', label: '12 Months', sublabel: 'Comfortable' },
+  { value: 'flexible', label: 'Flexible', sublabel: 'No rush' },
+];
+
+const FACTOR_LABELS: Record<string, string> = {
+  payment_history: 'Payment History',
+  utilization: 'Credit Utilization',
+  credit_age: 'Credit Age',
+  credit_mix: 'Credit Mix',
+  new_credit: 'New Credit',
+};
+
+const FACTOR_WEIGHTS: Record<string, number> = {
+  payment_history: 35,
+  utilization: 30,
+  credit_age: 15,
+  credit_mix: 10,
+  new_credit: 10,
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function CreditBuilderPage() {
   const { user } = useAuth();
-  const [creditScore, setCreditScore] = useState(680);
-  const [previousScore, setPreviousScore] = useState(650);
-  const [loading, setLoading] = useState(true);
+
+  // Stage: 1=Goal Capture, 2=Credit Access, 3=Financial Context, 4=Dashboard
+  const [stage, setStage] = useState<1 | 2 | 3 | 4>(1);
+
+  // Stage 1 – Goal
+  const [goalType, setGoalType] = useState<GoalType | ''>('');
+  const [targetScore, setTargetScore] = useState('720');
+  const [deadlineMonths, setDeadlineMonths] = useState('');
+  const [majorApplications, setMajorApplications] = useState('');
+
+  // Stage 2 – Credit Access
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [showAgreement, setShowAgreement] = useState(false);
   const [reportFileName, setReportFileName] = useState<string | null>(null);
-  const [reportAnalysis, setReportAnalysis] = useState<{
-    score?: number;
-    positives: string[];
-    warnings: string[];
-    recommendations: string[];
-  } | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [reportText, setReportText] = useState<string | null>(null);
+  const [reportAnalysis, setReportAnalysis] = useState<{
+    score?: number; positives: string[]; warnings: string[]; recommendations: string[];
+  } | null>(null);
+  const [reportUploadId, setReportUploadId] = useState<string | null>(null);
+  const [softPullLoading, setSoftPullLoading] = useState(false);
+  const [softPullStatus, setSoftPullStatus] = useState<string | null>(null);
+  const [firebaseWarning, setFirebaseWarning] = useState<string | null>(null);
+
+  // Stage 3 – Financial context
+  const [financialContext, setFinancialContext] = useState<FinancialContext>({
+    occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '',
+    totalCreditLimit: '', savings: '', selfEmployed: false,
+  });
+
+  // Dashboard
+  const [aiResult, setAiResult] = useState<AiResult | null>(null);
   const [llmAdvice, setLlmAdvice] = useState<string | null>(null);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
-  const [reportError, setReportError] = useState<string | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [agreementAccepted, setAgreementAccepted] = useState(false);
-  const [showAgreement, setShowAgreement] = useState(false);
-  const [reportUploadId, setReportUploadId] = useState<string | null>(null);
-  const [softPullStatus, setSoftPullStatus] = useState<string | null>(null);
-  const [softPullLoading, setSoftPullLoading] = useState(false);
-  const scoreChange = creditScore - previousScore;
-  const [creditProfile, setCreditProfile] = useState({
-    objective: '',
-    timeline: '',
-    targetScore: '',
-    majorApplications: '',
-  });
-  const [pendingReportFile, setPendingReportFile] = useState<File | null>(null);
-  const [showProfileQuestions, setShowProfileQuestions] = useState(false);
-  const uploadSectionRef = useRef<HTMLDivElement | null>(null);
-  const hasReport = Boolean(reportAnalysis);
-  const hasAdvice = Boolean(llmAdvice);
-  const progressPoints = (hasReport ? 50 : 0) + (hasAdvice ? 50 : 0);
-  const progressSteps = [
-    {
-      title: 'Upload your credit report',
-      completed: hasReport,
-      points: 50,
-    },
-    {
-      title: 'Generate AI action plan',
-      completed: hasAdvice,
-      points: 50,
-    },
-  ];
+  const [expandedPhase, setExpandedPhase] = useState<string | null>('Month 1-2');
+  const [creditScore, setCreditScore] = useState(680);
 
-  const creditFactors = [
-    { name: 'Payment History', percentage: 85, status: 'good', impact: 35 },
-    { name: 'Credit Utilization', percentage: 45, status: 'excellent', impact: 30 },
-    { name: 'Credit Age', percentage: 60, status: 'fair', impact: 15 },
-    { name: 'Credit Mix', percentage: 70, status: 'good', impact: 10 },
-    { name: 'New Credit', percentage: 80, status: 'good', impact: 10 },
-  ];
+  const uploadRef = useRef<HTMLDivElement | null>(null);
 
-  const [tasks, setTasks] = useState([
-    { id: 1, title: 'Pay off credit card balance', completed: true, points: 50 },
-    { id: 2, title: 'Dispute error on credit report', completed: false, points: 75 },
-    { id: 3, title: 'Set up autopay for loans', completed: false, points: 30 },
-    { id: 4, title: 'Reduce credit utilization below 30%', completed: false, points: 100 },
-  ]);
+  // ── Computed ──────────────────────────────────────────────────────────────
+  const displayScore = aiResult?.credit_summary?.current_score ?? reportAnalysis?.score ?? creditScore;
+  const projectedScore = aiResult?.credit_summary?.projected_score ?? null;
+  const scoreBand =
+    aiResult?.credit_summary?.score_band ??
+    (displayScore >= 800 ? 'Exceptional' : displayScore >= 740 ? 'Very Good' : displayScore >= 670 ? 'Good' : displayScore >= 580 ? 'Fair' : 'Poor');
+  const modeLabel = displayScore < 580 ? 'Rebuild Mode' : displayScore > 760 ? 'Optimization Mode' : 'Build Mode';
+  const modeBadgeColor =
+    displayScore < 580 ? 'bg-red-100 text-red-700' : displayScore > 760 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700';
 
-  // Load credit score from Firebase
+  const dtiPct =
+    aiResult?.goal_alignment?.dti_percent ??
+    (() => {
+      const monthly = parseFloat(financialContext.annualIncome) / 12;
+      const debt = parseFloat(financialContext.monthlyDebt);
+      if (monthly > 0 && !isNaN(debt)) return Math.round((debt / monthly) * 100);
+      return null;
+    })();
+
+  const readinessPct = aiResult?.goal_alignment?.readiness_score_percent ?? null;
+
+  function getScoreColor(s: number) {
+    if (s >= 740) return 'text-green-400';
+    if (s >= 670) return 'text-amber-300';
+    if (s >= 580) return 'text-orange-300';
+    return 'text-red-400';
+  }
+
+  function getImpactColor(level: string) {
+    if (level === 'High') return 'text-red-600 bg-red-50 border-red-200';
+    if (level === 'Medium') return 'text-amber-600 bg-amber-50 border-amber-200';
+    return 'text-green-600 bg-green-50 border-green-200';
+  }
+
+  function getFactorBarColor(current: number, ideal: number) {
+    if (current >= ideal) return 'bg-green-400';
+    if (current >= ideal * 0.6) return 'bg-amber-400';
+    return 'bg-red-400';
+  }
+
+  // ── Load credit score from Firebase ──────────────────────────────────────
   useEffect(() => {
-    const loadCreditData = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      const timeoutId = window.setTimeout(() => {
-        setLoading(false);
-      }, 6000);
-      try {
-        const result = await getCreditScore(user.uid);
-        if (result.success && result.data) {
-          setCreditScore(result.data.currentScore);
-          setPreviousScore(result.data.previousScore);
-
-          // Update tasks with completed status
-          if (result.data.tasks) {
-            setTasks(prev => prev.map(task => {
-              const savedTask = result.data?.tasks.find(t => t.id === task.id);
-              return savedTask ? { ...task, completed: savedTask.completed } : task;
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('Error loading credit data:', error);
-      } finally {
-        window.clearTimeout(timeoutId);
-        setLoading(false);
-      }
+    if (!user) return;
+    const load = async () => {
+      const result = await getCreditScore(user.uid);
+      if ((result as any).warning) setFirebaseWarning((result as any).warning);
+      if (result.success && result.data) setCreditScore(result.data.currentScore);
     };
-
-    loadCreditData();
+    load().catch(console.error);
   }, [user]);
 
-  const handleTaskComplete = async (taskId: number, taskPoints: number) => {
-    if (!user) return;
-
-    // Update UI optimistically
-    setTasks(prev => prev.map(task => 
-      task.id === taskId ? { ...task, completed: true } : task
-    ));
-
-    try {
-      await completeTask(user.uid, taskId);
-      await addPoints(user.uid, taskPoints);
-    } catch (error) {
-      console.error('Error completing task:', error);
-      // Revert on error
-      setTasks(prev => prev.map(task => 
-        task.id === taskId ? { ...task, completed: false } : task
-      ));
-    }
-  };
-
-  const tips = [
-    {
-      title: 'Keep Credit Utilization Low',
-      description: 'Try to use less than 30% of your available credit to boost your score.',
-      icon: FaLightbulb,
-    },
-    {
-      title: 'Pay Bills On Time',
-      description: 'Payment history is the most important factor affecting your credit score.',
-      icon: FaCheckCircle,
-    },
-    {
-      title: 'Monitor Your Credit Report',
-      description: 'Check your credit report regularly for errors and dispute them promptly.',
-      icon: FaExclamationTriangle,
-    },
-  ];
-
-  const getScoreColor = (score: number) => {
-    if (score >= 750) return 'text-green-500';
-    if (score >= 670) return 'text-amber';
-    return 'text-red-500';
-  };
-
-  const getStatusColor = (status: string) => {
-    if (status === 'excellent') return 'bg-green-500';
-    if (status === 'good') return 'bg-amber';
-    return 'bg-yellow-500';
-  };
-
-  const analyzeReportText = (text: string) => {
-    const normalized = text.replace(/\s+/g, ' ').toLowerCase();
-    const positives: string[] = [];
-    const warnings: string[] = [];
-    const recommendations: string[] = [];
-
-    const scoreMatch = normalized.match(/(?:credit score|score)\D{0,12}(\d{3})/);
-    const score = scoreMatch ? Number(scoreMatch[1]) : undefined;
-
-    const utilizationMatch = normalized.match(/utilization\D{0,10}(\d{1,3})%/);
-    if (utilizationMatch) {
-      const utilization = Number(utilizationMatch[1]);
-      if (utilization > 30) {
-        warnings.push(`Credit utilization appears high (${utilization}%).`);
-        recommendations.push('Aim to keep utilization under 30% by paying down balances.');
-      } else {
-        positives.push(`Credit utilization is healthy at ${utilization}%.`);
-      }
-    }
-
-    if (/late payment|past due|30 day|60 day|90 day/.test(normalized)) {
-      warnings.push('Late or past-due payments detected.');
-      recommendations.push('Set up autopay or reminders to avoid missed payments.');
-    } else {
-      positives.push('No late payment indicators found.');
-    }
-
-    if (/collection|charge[- ]?off|bankrupt|foreclosure|repossession/.test(normalized)) {
-      warnings.push('Collections or derogatory marks detected.');
-      recommendations.push('Dispute inaccuracies and negotiate settlements where possible.');
-    }
-
-    const inquiryCount = (normalized.match(/hard inquiry|inquiry/g) || []).length;
-    if (inquiryCount >= 4) {
-      warnings.push(`Multiple inquiries detected (${inquiryCount}).`);
-      recommendations.push('Limit new credit applications to reduce inquiry impact.');
-    }
-
-    if (/average age|credit age|oldest account/.test(normalized)) {
-      positives.push('Credit age information found—keep older accounts open when possible.');
-    }
-
-    if (positives.length === 0 && warnings.length === 0) {
-      recommendations.push('We could not detect key indicators. Consider uploading a detailed report or PDF export.');
-    }
-
-    if (typeof score === 'number') {
-      if (score >= 750) {
-        positives.push(`Score range detected: ${score} (Excellent).`);
-      } else if (score >= 670) {
-        positives.push(`Score range detected: ${score} (Good).`);
-        recommendations.push('Focus on lowering utilization to push into Excellent range.');
-      } else {
-        warnings.push(`Score range detected: ${score} (Fair).`);
-        recommendations.push('Pay on time and reduce balances to build momentum.');
-      }
-    }
-
-    return { score, positives, warnings, recommendations };
-  };
-
+  // ── PDF extraction ────────────────────────────────────────────────────────
   const extractPdfText = async (file: File) => {
     const pdfjs = await import('pdfjs-dist');
     const pdfjsLib: any = pdfjs;
-    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-    }
-
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
     const typedArray = new Uint8Array(await file.arrayBuffer());
     const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
     let text = '';
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item: any) => item.str).join(' ');
-      text += `${pageText}\n`;
+      text += content.items.map((i: any) => i.str).join(' ') + '\n';
     }
-
     return text;
   };
 
-  const saveReportMetadata = async (params: {
-    fileName: string;
-    fileUrl: string;
-    reportScore?: number;
-    userId: string;
-  }) => {
-    const docRef = await addDoc(collection(db, 'creditReports'), {
-      userId: params.userId,
-      fileName: params.fileName,
-      fileUrl: params.fileUrl,
-      score: params.reportScore ?? null,
-      createdAt: serverTimestamp(),
-    });
-    return docRef.id;
-  };
-
-  const saveReportAnalysis = async (params: {
-    reportId: string;
-    analysis: { positives: string[]; warnings: string[]; recommendations: string[]; score?: number };
-  }) => {
-    await addDoc(collection(db, 'creditReportAnalyses'), {
-      reportId: params.reportId,
-      analysis: params.analysis,
-      createdAt: serverTimestamp(),
-    });
-  };
-
-  const handleReportUpload = async (file: File | null) => {
-    if (!file) return;
-    if (!user) {
-      setReportError('Please log in before uploading a credit report.');
-      return;
+  // ── Basic local report analysis ────────────────────────────────────────────
+  const analyzeReportText = (text: string) => {
+    const n = text.replace(/\s+/g, ' ').toLowerCase();
+    const positives: string[] = [];
+    const warnings: string[] = [];
+    const recommendations: string[] = [];
+    const scoreMatch = n.match(/(?:credit score|score)\D{0,12}(\d{3})/);
+    const score = scoreMatch ? Number(scoreMatch[1]) : undefined;
+    const utilMatch = n.match(/utilization\D{0,10}(\d{1,3})%/);
+    if (utilMatch) {
+      const u = Number(utilMatch[1]);
+      if (u > 30) { warnings.push(`High utilization detected: ${u}%.`); recommendations.push('Pay down balances below 30%.'); }
+      else positives.push(`Utilization is healthy at ${u}%.`);
     }
-    if (!agreementAccepted) {
-      setShowAgreement(true);
-      return;
+    if (/late payment|past due|30 day|60 day|90 day/.test(n)) {
+      warnings.push('Late or past-due payments detected.'); recommendations.push('Set up autopay to avoid missed payments.');
+    } else { positives.push('No late payment indicators found.'); }
+    if (/collection|charge[- ]?off|bankrupt|foreclosure/.test(n)) {
+      warnings.push('Derogatory marks detected.'); recommendations.push('Dispute inaccuracies and negotiate settlements where possible.');
     }
-
-    setPendingReportFile(file);
-    setShowProfileQuestions(true);
+    if (typeof score === 'number') {
+      if (score >= 740) positives.push(`Score ${score} — Very Good range.`);
+      else if (score >= 670) { positives.push(`Score ${score} — Good range.`); recommendations.push('Lower utilization to reach Very Good.'); }
+      else { warnings.push(`Score ${score} — needs improvement.`); recommendations.push('Pay on time and reduce balances to build momentum.'); }
+    }
+    return { score, positives, warnings, recommendations };
   };
 
+  // ── Process uploaded file ─────────────────────────────────────────────────
   const processReportFile = async (file: File) => {
-    if (!user) {
-      setReportError('Please log in before uploading a credit report.');
-      return;
-    }
+    if (!user) { setReportError('Please log in first.'); return; }
     setReportError(null);
     setReportAnalysis(null);
     setReportText(null);
-    setLlmAdvice(null);
-    setLlmError(null);
     setReportLoading(true);
     setReportFileName(file.name);
     setReportUploadId(null);
-
     try {
       let text = '';
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))
         text = await extractPdfText(file);
-      } else {
-        text = await file.text();
-      }
-
-      if (!text || text.trim().length < 50) {
-        throw new Error('The report content looks empty. Please upload a full report.');
-      }
-
+      else text = await file.text();
+      if (!text || text.trim().length < 50) throw new Error('Report looks empty. Try a full PDF or TXT export.');
       const trimmed = text.trim();
       setReportText(trimmed);
       const analysis = analyzeReportText(trimmed);
       setReportAnalysis(analysis);
-
+      // Upload to Firebase Storage
       const storageRef = ref(storage, `credit-reports/${user.uid}/${Date.now()}-${file.name}`);
       await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' });
       const fileUrl = await getDownloadURL(storageRef);
-      const reportId = await saveReportMetadata({
-        fileName: file.name,
-        fileUrl,
-        reportScore: analysis.score,
-        userId: user.uid,
+      const docRef = await addDoc(collection(db, 'creditReports'), {
+        userId: user.uid, fileName: file.name, fileUrl, score: analysis.score ?? null, createdAt: serverTimestamp(),
       });
-      setReportUploadId(reportId);
-      await saveReportAnalysis({ reportId, analysis });
-      await requestLlmAdvice({ text: trimmed, score: analysis.score, reportId });
+      setReportUploadId(docRef.id);
+      await addDoc(collection(db, 'creditReportAnalyses'), { reportId: docRef.id, analysis, createdAt: serverTimestamp() });
+      // Advance to Stage 3 — full AI runs after financial context is collected
+      setStage(3);
     } catch (error) {
-      console.error('Report analysis failed:', error);
-      const message = error instanceof Error
-        ? error.message
-        : 'We could not read that report. Try exporting as PDF or TXT and uploading again.';
-      setReportError(message);
+      const msg = error instanceof Error ? error.message : 'Could not read this report. Try PDF or TXT format.';
+      setReportError(msg);
     } finally {
       setReportLoading(false);
     }
   };
 
-  const handleProfileSubmit = async () => {
-    if (!pendingReportFile) {
-      setShowProfileQuestions(false);
-      return;
-    }
-
-    setShowProfileQuestions(false);
-    await processReportFile(pendingReportFile);
-    setPendingReportFile(null);
+  const handleFileChange = (file: File | null) => {
+    if (!file) return;
+    if (!user) { setReportError('Please log in before uploading.'); return; }
+    if (!agreementAccepted) { setShowAgreement(true); return; }
+    processReportFile(file);
   };
 
-  const requestLlmAdvice = async (override?: {
-    text: string;
-    score?: number;
-    reportId?: string | null;
-  }) => {
-    const payloadText = override?.text ?? reportText;
-    const payloadScore = override?.score ?? reportAnalysis?.score ?? null;
-    const payloadReportId = override?.reportId ?? reportUploadId;
-
-    if (!payloadText) {
-      setLlmError('Upload a report first so we can generate advice.');
-      return;
-    }
-
+  // ── AI analysis – called after Stage 3 ───────────────────────────────────
+  const runAiAnalysis = async () => {
+    if (!reportText) { setLlmError('Upload a report first.'); return; }
     setLlmLoading(true);
     setLlmError(null);
+    setAiResult(null);
     setLlmAdvice(null);
-
     try {
-      const response = await fetch('/api/credit-report-analyze', {
+      const resp = await fetch('/api/credit-report-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: payloadText.slice(0, 12000),
-          score: payloadScore,
-          reportId: payloadReportId,
-          profile: creditProfile,
+          text: reportText.slice(0, 12000),
+          score: reportAnalysis?.score ?? null,
+          reportId: reportUploadId,
+          profile: { goalType, targetScore, deadlineMonths, majorApplications },
+          financialContext,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate advice.');
+      if (!resp.ok) throw new Error('AI analysis failed. Please try again.');
+      const data = await resp.json();
+      if (data.result) {
+        setAiResult(data.result as AiResult);
+        if (user) addPoints(user.uid, 100).catch(console.error);
       }
-
-      const data = await response.json();
-      const adviceText = data.advice ?? 'No advice generated.';
-      setLlmAdvice(adviceText);
-    } catch (error) {
-      console.error('LLM advice failed:', error);
-      setLlmError('We could not generate advice right now. Please try again.');
+      if (data.advice) setLlmAdvice(data.advice);
+      setStage(4);
+    } catch (err) {
+      setLlmError(err instanceof Error ? err.message : 'Could not run analysis. Please try again.');
     } finally {
       setLlmLoading(false);
     }
   };
 
   const requestSoftPull = async () => {
-    if (!user) {
-      setSoftPullStatus('Please log in to request a soft pull.');
-      return;
-    }
-
+    if (!user) { setSoftPullStatus('Please log in to request a soft pull.'); return; }
     setSoftPullLoading(true);
     setSoftPullStatus(null);
-
     try {
-      const response = await fetch('/api/credit-soft-pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.uid }),
+      const resp = await fetch('/api/credit-soft-pull', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.uid }),
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Soft pull failed.');
-      }
-
-      setSoftPullStatus(data?.message || 'Soft pull request submitted.');
-    } catch (error) {
-      console.error('Soft pull failed:', error);
-      setSoftPullStatus('Soft pull is not configured yet. Please try later.');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || 'Soft pull failed.');
+      setSoftPullStatus(data?.message || 'Request submitted.');
+    } catch {
+      setSoftPullStatus('Soft pull requires bureau integration. Feature coming soon.');
     } finally {
       setSoftPullLoading(false);
     }
   };
 
+  const handleReset = () => {
+    setStage(1);
+    setGoalType('');
+    setDeadlineMonths('');
+    setTargetScore('720');
+    setMajorApplications('');
+    setAiResult(null);
+    setLlmAdvice(null);
+    setReportText(null);
+    setReportAnalysis(null);
+    setReportFileName(null);
+    setReportError(null);
+    setFinancialContext({ occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '', totalCreditLimit: '', savings: '', selfEmployed: false });
+  };
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background py-12">
-      <div className="container mx-auto px-4">
-        {showAgreement && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 relative">
-              <button
-                onClick={() => setShowAgreement(false)}
-                className="absolute top-4 right-4 text-darkwood hover:text-secondary"
-                aria-label="Close agreement"
+    <div className="min-h-screen bg-background py-10">
+      <div className="container mx-auto px-4 max-w-5xl">
+
+        {/* ── Agreement Modal ── */}
+        <AnimatePresence>
+          {showAgreement && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4"
+            >
+              <motion.div
+                initial={{ scale: 0.93, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.93, y: 24 }}
+                className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 relative"
               >
-                <FaTimes />
-              </button>
-              <h2 className="text-2xl font-bold text-secondary mb-4 font-serif">Credit Report User Agreement</h2>
-              <div className="space-y-3 text-sm text-darkwood max-h-[60vh] overflow-y-auto pr-2">
-                <p>
-                  By uploading a credit report, you confirm you have the legal right to share this report and that the
-                  information is accurate to the best of your knowledge.
-                </p>
-                <p>
-                  You authorize WealthBridge to store your uploaded file and metadata in Firebase and to analyze the
-                  report using automated tools (including AI). We do not sell your data. You can request deletion at any
-                  time by contacting support.
-                </p>
-                <p>
-                  This analysis is for educational purposes only and is not financial, legal, or credit repair advice.
-                  You are responsible for any decisions made based on these insights.
-                </p>
-                <p>
-                  If you do not agree, do not upload your report. Please review with your legal counsel if needed.
-                </p>
-              </div>
-              <div className="mt-6 flex items-center justify-between">
-                <label className="flex items-center space-x-2 text-sm text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={agreementAccepted}
-                    onChange={(event) => setAgreementAccepted(event.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span>I agree to the terms above.</span>
-                </label>
                 <button
                   onClick={() => setShowAgreement(false)}
-                  className="bg-primary hover:bg-amber text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  className="absolute top-4 right-4 text-darkwood hover:text-secondary"
+                  aria-label="Close"
                 >
-                  Continue
+                  <FaTimes />
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FaLock className="text-primary" />
+                  </div>
+                  <h2 className="text-xl font-bold text-secondary font-serif">Data Use Agreement</h2>
+                </div>
+                <div className="space-y-3 text-sm text-darkwood max-h-56 overflow-y-auto pr-1">
+                  <p>By uploading, you confirm you have the legal right to share this report and the information is accurate.</p>
+                  <p>
+                    You authorize WealthBridge to store your file in Firebase and analyze it with AI tools.
+                    We do not sell your data. Deletion can be requested at any time via support.
+                  </p>
+                  <p>
+                    This analysis is for <strong>educational purposes only</strong> and is not financial, legal, or credit repair advice.
+                  </p>
+                  <p className="font-semibold text-secondary">No hard inquiry will be made against your credit.</p>
+                </div>
+                <div className="mt-5 flex items-center justify-between gap-4">
+                  <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agreementAccepted}
+                      onChange={e => setAgreementAccepted(e.target.checked)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    <span className="text-secondary">
+                      I agree —{' '}
+                      <Link href="/terms" className="underline" target="_blank" rel="noreferrer">
+                        Terms &amp; Conditions
+                      </Link>
+                    </span>
+                  </label>
+                  <button
+                    onClick={() => setShowAgreement(false)}
+                    disabled={!agreementAccepted}
+                    className="bg-primary disabled:opacity-50 hover:bg-amber text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all flex-shrink-0"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {showProfileQuestions && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 relative">
-              <button
-                onClick={() => setShowProfileQuestions(false)}
-                className="absolute top-4 right-4 text-darkwood hover:text-secondary"
-                aria-label="Close questions"
-              >
-                <FaTimes />
-              </button>
-              <h2 className="text-2xl font-bold text-secondary mb-2 font-serif">Quick Credit Profile</h2>
-              <p className="text-sm text-darkwood mb-4">
-                Answer a few questions so we can tailor your analysis before we run the AI.
-              </p>
-              <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <label className="flex flex-col space-y-1">
-                  <span className="text-secondary font-medium">What are you trying to achieve?</span>
-                  <select
-                    value={creditProfile.objective}
-                    onChange={(event) => setCreditProfile((prev) => ({ ...prev, objective: event.target.value }))}
-                    className="border border-amber rounded-lg px-3 py-2 bg-white"
-                  >
-                    <option value="">Select</option>
-                    <option value="home">Buy a home</option>
-                    <option value="auto">Finance a car</option>
-                    <option value="premium-card">Premium credit card</option>
-                    <option value="rent">Rent an apartment</option>
-                    <option value="business">Business funding</option>
-                  </select>
-                </label>
-                <label className="flex flex-col space-y-1">
-                  <span className="text-secondary font-medium">When do you need this improvement?</span>
-                  <select
-                    value={creditProfile.timeline}
-                    onChange={(event) => setCreditProfile((prev) => ({ ...prev, timeline: event.target.value }))}
-                    className="border border-amber rounded-lg px-3 py-2 bg-white"
-                  >
-                    <option value="">Select</option>
-                    <option value="0-3">0-3 months</option>
-                    <option value="3-6">3-6 months</option>
-                    <option value="6-12">6-12 months</option>
-                    <option value="12+">12+ months</option>
-                  </select>
-                </label>
-                <label className="flex flex-col space-y-1">
-                  <span className="text-secondary font-medium">Target score</span>
-                  <input
-                    type="number"
-                    min="300"
-                    max="850"
-                    value={creditProfile.targetScore}
-                    onChange={(event) => setCreditProfile((prev) => ({ ...prev, targetScore: event.target.value }))}
-                    className="border border-amber rounded-lg px-3 py-2 bg-white"
-                    placeholder="e.g. 720"
-                  />
-                </label>
-                <label className="flex flex-col space-y-1">
-                  <span className="text-secondary font-medium">Major applications in next 6-12 months?</span>
-                  <select
-                    value={creditProfile.majorApplications}
-                    onChange={(event) => setCreditProfile((prev) => ({ ...prev, majorApplications: event.target.value }))}
-                    className="border border-amber rounded-lg px-3 py-2 bg-white"
-                  >
-                    <option value="">Select</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                    <option value="unsure">Not sure</option>
-                  </select>
-                </label>
-              </div>
-              <div className="mt-6 flex items-center justify-between">
-                <button
-                  onClick={() => setShowProfileQuestions(false)}
-                  className="text-sm text-darkwood"
-                >
-                  Skip for now
-                </button>
-                <button
-                  onClick={handleProfileSubmit}
-                  className="bg-primary hover:bg-amber text-white px-4 py-2 rounded-lg text-sm font-semibold"
-                >
-                  Continue to analysis
-                </button>
-              </div>
-            </div>
+        {/* ── Page Header ── */}
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
+          <div className="inline-flex items-center space-x-2 bg-primary/10 text-primary text-xs font-bold px-3 py-1 rounded-full mb-3 uppercase tracking-widest">
+            <FaBolt className="text-[10px]" />
+            <span>Credit Strategy Engine</span>
           </div>
-        )}
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-5xl font-bold text-secondary mb-4 font-serif">
-            Credit Builder Dashboard
-          </h1>
-          <p className="text-xl text-darkwood">
-            Track your credit journey and build a stronger financial future
+          <h1 className="text-4xl md:text-5xl font-bold text-secondary font-serif mb-2">AI Credit Optimizer</h1>
+          <p className="text-darkwood max-w-xl mx-auto text-sm">
+            Goal-driven credit strategy — aligned to your timeline, risk profile, and objectives.
           </p>
         </motion.div>
 
-        {!user && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md mx-auto mb-8 frosted-glass rounded-xl p-6 text-center"
-          >
-            <p className="text-darkwood mb-4">
-              Please log in to track your credit score and progress!
-            </p>
-            <a
-              href="/login"
-              className="inline-block bg-primary hover:bg-amber text-white font-bold py-2 px-6 rounded-lg transition-all"
-            >
-              Log In
-            </a>
-          </motion.div>
-        )}
-
-        {loading && user && hasReport && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
-            <p className="mt-4 text-darkwood">Loading your credit data...</p>
+        {/* ── Stage Progress Indicator (stages 1–3 only) ── */}
+        {stage < 4 && (
+          <div className="flex items-center justify-center mb-10">
+            {[
+              { n: 1 as const, label: 'Goal' },
+              { n: 2 as const, label: 'Credit Access' },
+              { n: 3 as const, label: 'Financials' },
+            ].map(({ n, label }, i) => (
+              <React.Fragment key={n}>
+                <div className="flex flex-col items-center">
+                  <div
+                    className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                      stage === n
+                        ? 'bg-primary text-white shadow-lg ring-4 ring-primary/20'
+                        : stage > n
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-200 text-gray-400'
+                    }`}
+                  >
+                    {stage > n ? <FaCheck className="text-xs" /> : n}
+                  </div>
+                  <span
+                    className={`text-[11px] mt-1 font-semibold ${
+                      stage === n ? 'text-primary' : stage > n ? 'text-green-600' : 'text-gray-400'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {i < 2 && (
+                  <div className={`h-0.5 w-14 md:w-24 mx-1 mb-4 ${stage > n ? 'bg-green-400' : 'bg-gray-200'}`} />
+                )}
+              </React.Fragment>
+            ))}
           </div>
         )}
 
-        {!loading && (
-          <>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="frosted-glass rounded-2xl p-6 shadow-xl mb-8"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {/* STAGE 1 — Goal Capture                                               */}
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {stage === 1 && (
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            {/* Goal Cards */}
+            <div className="frosted-glass rounded-2xl p-8 shadow-xl">
+              <h2 className="text-2xl font-bold text-secondary font-serif mb-1">What&apos;s your credit goal?</h2>
+              <p className="text-sm text-darkwood mb-6">
+                Your entire strategy will be personalised to your specific objective and urgency.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {GOALS.map(({ type, label, icon: Icon, gradient }) => (
+                  <button
+                    key={type}
+                    onClick={() => setGoalType(type)}
+                    className={`group relative rounded-2xl p-5 border-2 text-left transition-all duration-200 overflow-hidden ${
+                      goalType === type
+                        ? 'border-primary shadow-lg scale-[1.02]'
+                        : 'border-amber/50 hover:border-primary/60 hover:scale-[1.01] bg-white/60'
+                    }`}
+                  >
+                    <div
+                      className={`absolute inset-0 bg-gradient-to-br ${gradient} transition-opacity ${
+                        goalType === type ? 'opacity-10' : 'opacity-0 group-hover:opacity-5'
+                      }`}
+                    />
+                    <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-3 shadow-md`}>
+                      <Icon className="text-white text-lg" />
+                    </div>
+                    <span className="text-sm font-semibold text-secondary leading-snug">{label}</span>
+                    {goalType === type && (
+                      <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                        <FaCheck className="text-white text-[9px]" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Target Score + Applications */}
+            <div className="frosted-glass rounded-2xl p-6 shadow-xl">
+              <h3 className="text-lg font-bold text-secondary font-serif mb-5">Set your targets</h3>
+              <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-secondary mb-2 font-serif">
-                    Credit Builder Quest
-                  </h2>
-                  <p className="text-darkwood text-sm">
-                    Complete the steps below to unlock your personalized credit dashboard.
-                  </p>
+                  <label className="block text-sm font-semibold text-secondary mb-2">Target Credit Score</label>
+                  <div className="flex items-center space-x-4">
+                    <input
+                      type="range" min={580} max={850} step={5}
+                      value={targetScore || 720}
+                      onChange={e => setTargetScore(e.target.value)}
+                      className="flex-1 accent-primary h-2"
+                    />
+                    <span className="text-2xl font-black text-primary w-14 text-center">{targetScore || 720}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-darkwood mt-1.5">
+                    <span>580 — Fair</span><span>720 — Good</span><span>850 — Exceptional</span>
+                  </div>
                 </div>
-                <div className="bg-white/80 border border-amber rounded-2xl px-4 py-3 text-center">
-                  <div className="text-xs uppercase tracking-[0.2em] text-darkwood">Progress</div>
-                  <div className="text-2xl font-bold text-secondary mt-1">{progressPoints}/100</div>
+                <div>
+                  <label className="block text-sm font-semibold text-secondary mb-2">
+                    Planned major applications in next 6–12 months?
+                  </label>
+                  <select
+                    value={majorApplications}
+                    onChange={e => setMajorApplications(e.target.value)}
+                    className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white text-sm focus:outline-none focus:border-primary"
+                  >
+                    <option value="">Select…</option>
+                    <option value="yes">Yes — mortgage, auto, or business loan</option>
+                    <option value="no">No major applications planned</option>
+                    <option value="unsure">Not sure yet</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Deadline */}
+            <div className="frosted-glass rounded-2xl p-6 shadow-xl">
+              <h3 className="text-lg font-bold text-secondary font-serif mb-4">When do you need this?</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {DEADLINES.map(({ value, label, sublabel }) => (
+                  <button
+                    key={value}
+                    onClick={() => setDeadlineMonths(value)}
+                    className={`rounded-xl border-2 p-4 text-center transition-all ${
+                      deadlineMonths === value
+                        ? 'border-primary bg-primary/5 shadow-md'
+                        : 'border-amber/40 bg-white/60 hover:border-primary/50'
+                    }`}
+                  >
+                    <div className="font-bold text-secondary">{label}</div>
+                    <div className="text-[11px] text-darkwood mt-0.5">{sublabel}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setStage(2)}
+                disabled={!goalType || !deadlineMonths}
+                className="flex items-center space-x-2 bg-primary hover:bg-amber disabled:opacity-40 text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg text-sm"
+              >
+                <span>Next: Credit Access</span>
+                <FaArrowRight />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {/* STAGE 2 — Credit Access                                              */}
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {stage === 2 && (
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            {!user && (
+              <div className="frosted-glass rounded-2xl p-6 text-center">
+                <p className="text-darkwood mb-3">Log in to securely upload and track your credit data.</p>
+                <a href="/login" className="inline-block bg-primary hover:bg-amber text-white font-bold py-2 px-6 rounded-lg transition-all">
+                  Log In
+                </a>
+              </div>
+            )}
+            {firebaseWarning && (
+              <div className="rounded-xl border border-amber bg-white/80 px-4 py-3 text-sm text-secondary">
+                {firebaseWarning}
+              </div>
+            )}
+
+            {/* Consent strip */}
+            <div
+              className={`frosted-glass rounded-2xl p-5 border-2 transition-all ${
+                agreementAccepted ? 'border-green-300 bg-green-50/40' : 'border-amber'
+              }`}
+            >
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-start space-x-3">
+                  <div
+                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      agreementAccepted ? 'bg-green-500' : 'bg-amber/20'
+                    }`}
+                  >
+                    {agreementAccepted
+                      ? <FaCheck className="text-white text-xs" />
+                      : <FaLock className="text-amber text-xs" />}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-secondary text-sm">
+                      {agreementAccepted ? '✓ Agreement accepted' : 'Step 1 — Review & accept data agreement'}
+                    </div>
+                    <div className="text-xs text-darkwood mt-0.5">
+                      No hard inquiry · Data encrypted in Firebase · AI advice disclaimer applies
+                    </div>
+                  </div>
+                </div>
+                {!agreementAccepted && (
+                  <button
+                    onClick={() => setShowAgreement(true)}
+                    className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-amber transition-all"
+                  >
+                    Review Agreement
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Upload + Soft Pull side by side */}
+            <div className="grid md:grid-cols-2 gap-6" ref={uploadRef}>
+              {/* Upload Report */}
+              <div className="frosted-glass rounded-2xl p-6 border border-amber/40">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <FaCloudUploadAlt className="text-primary text-lg" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-secondary text-sm">Upload Credit Report</div>
+                    <div className="text-xs text-darkwood">PDF, TXT or CSV — stored securely in Firebase</div>
+                  </div>
+                </div>
+
+                <label
+                  className={`block relative cursor-pointer ${!agreementAccepted ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <div className="border-2 border-dashed border-amber/60 hover:border-primary rounded-xl p-7 text-center transition-all bg-white/60 hover:bg-white/80">
+                    {reportLoading ? (
+                      <div className="flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-9 w-9 border-4 border-primary border-t-transparent mb-2" />
+                        <span className="text-sm text-darkwood">Uploading &amp; analyzing…</span>
+                      </div>
+                    ) : reportFileName ? (
+                      <div className="flex items-center justify-center space-x-2 text-primary text-sm">
+                        <FaFileAlt />
+                        <span className="font-medium">{reportFileName}</span>
+                        <FaCheckCircle className="text-green-500" />
+                      </div>
+                    ) : (
+                      <>
+                        <FaCloudUploadAlt className="text-4xl text-primary/40 mx-auto mb-2" />
+                        <div className="text-sm font-semibold text-secondary">Click or drag to upload</div>
+                        <div className="text-xs text-darkwood mt-1">PDF · TXT · CSV</div>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept=".pdf,.txt,.csv"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={e => handleFileChange(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </label>
+
+                {!agreementAccepted && (
+                  <button
+                    onClick={() => setShowAgreement(true)}
+                    className="mt-2 text-xs text-primary underline"
+                  >
+                    Accept agreement to enable upload
+                  </button>
+                )}
+                {reportError && <div className="mt-3 text-sm text-red-600">{reportError}</div>}
+
+                {/* Free report links */}
+                <div className="mt-5 pt-4 border-t border-amber/30">
+                  <div className="text-xs font-bold text-secondary mb-2 uppercase tracking-wide">Get a free report:</div>
+                  {[
+                    ['AnnualCreditReport.com (official)', 'https://www.annualcreditreport.com/'],
+                    ['Experian Free Report', 'https://www.experian.com/'],
+                    ['Equifax Free Report', 'https://www.equifax.com/personal/credit-report-services/free-credit-reports/'],
+                    ['TransUnion Free Report', 'https://www.transunion.com/'],
+                  ].map(([name, url]) => (
+                    <a
+                      key={name}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center space-x-1.5 text-xs text-primary hover:underline mb-1.5"
+                    >
+                      <FaLink className="text-[10px]" />
+                      <span>{name}</span>
+                    </a>
+                  ))}
                 </div>
               </div>
 
-              <div className="mt-6 grid md:grid-cols-2 gap-4">
-                {progressSteps.map((step) => (
-                  <div
-                    key={step.title}
-                    className={`rounded-xl border p-4 flex items-center justify-between ${
-                      step.completed ? 'bg-green-50 border-green-200' : 'bg-white/80 border-amber'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      {step.completed ? (
-                        <FaCheckCircle className="text-green-500" />
-                      ) : (
-                        <div className="w-3 h-3 rounded-full border border-primary" />
-                      )}
-                      <span className={`text-sm ${step.completed ? 'text-green-700' : 'text-secondary'}`}>
-                        {step.title}
-                      </span>
+              {/* Soft Pull */}
+              <div className="frosted-glass rounded-2xl p-6 flex flex-col justify-between border border-amber/40">
+                <div>
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                      <FaShieldAlt className="text-blue-500 text-lg" />
                     </div>
-                    <span className="text-xs text-primary">+{step.points} pts</span>
+                    <div>
+                      <div className="font-bold text-secondary text-sm">Soft Pull Credit Check</div>
+                      <div className="text-xs text-darkwood">No impact to your credit score</div>
+                    </div>
                   </div>
+                  <ul className="space-y-2 text-xs text-darkwood mb-5">
+                    {[
+                      'No hard inquiry — score is not affected',
+                      'Instant bureau score retrieval',
+                      'Requires Experian API integration',
+                    ].map(item => (
+                      <li key={item} className="flex items-center space-x-2">
+                        <FaCheck className="text-green-500 flex-shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {softPullStatus && (
+                    <div className="text-xs text-darkwood bg-white/80 rounded-lg p-2.5 border border-amber/40 mb-3">
+                      {softPullStatus}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <button
+                    onClick={requestSoftPull}
+                    disabled={softPullLoading || !user}
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold py-3 rounded-xl transition-all"
+                  >
+                    {softPullLoading ? 'Requesting…' : 'Request Soft Pull'}
+                  </button>
+                  <p className="text-[10px] text-darkwood/50 text-center mt-2">Bureau integration in progress — coming soon</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <button onClick={() => setStage(1)} className="text-sm text-darkwood hover:text-secondary">
+                ← Back to Goal
+              </button>
+              {reportAnalysis && (
+                <button
+                  onClick={() => setStage(3)}
+                  className="flex items-center space-x-2 bg-primary hover:bg-amber text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg text-sm"
+                >
+                  <span>Next: Financial Context</span>
+                  <FaArrowRight />
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {/* STAGE 3 — Financial Context                                          */}
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {stage === 3 && (
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="frosted-glass rounded-2xl p-8 shadow-xl">
+              <h2 className="text-2xl font-bold text-secondary font-serif mb-1">Financial Context</h2>
+              <p className="text-sm text-darkwood mb-6">
+                This powers your DTI calculation, utilization modeling, and approval readiness score. All fields are optional
+                but improve accuracy.
+              </p>
+
+              <div className="grid md:grid-cols-2 gap-5">
+                {[
+                  { field: 'occupation', label: 'Occupation / Job Title', icon: FaUserTie, type: 'text', placeholder: 'e.g. Software Engineer' },
+                  { field: 'annualIncome', label: 'Annual Gross Income ($)', icon: FaDollarSign, type: 'number', placeholder: 'e.g. 65000' },
+                  { field: 'monthlyDebt', label: 'Total Monthly Debt Payments ($)', icon: FaMoneyBillWave, type: 'number', placeholder: 'e.g. 800' },
+                  { field: 'rentMortgage', label: 'Rent / Mortgage ($/month)', icon: FaBuilding, type: 'number', placeholder: 'e.g. 1500' },
+                  { field: 'totalCreditLimit', label: 'Total Credit Limits ($)', icon: FaCreditCard, type: 'number', placeholder: 'e.g. 12000' },
+                  { field: 'savings', label: 'Savings / Emergency Fund ($)', icon: FaDollarSign, type: 'number', placeholder: 'e.g. 3000' },
+                ].map(({ field, label, icon: Icon, type, placeholder }) => (
+                  <label key={field} className="block">
+                    <span className="flex items-center space-x-1.5 text-sm font-semibold text-secondary mb-1.5">
+                      <Icon className="text-primary text-xs" />
+                      <span>{label}</span>
+                    </span>
+                    <input
+                      type={type}
+                      value={(financialContext as any)[field]}
+                      placeholder={placeholder}
+                      onChange={e => setFinancialContext(prev => ({ ...prev, [field]: e.target.value }))}
+                      className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
+                    />
+                  </label>
                 ))}
               </div>
 
-              {!hasReport && (
-                <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="text-sm text-darkwood">
-                    Upload your report to unlock real score data and personalized insights.
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowAgreement(true);
-                      uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
-                    className="bg-primary hover:bg-amber text-white text-sm font-semibold px-4 py-2 rounded-lg"
-                  >
-                    Start Upload
-                  </button>
-                </div>
+              <label className="flex items-center space-x-3 mt-5 cursor-pointer w-fit">
+                <input
+                  type="checkbox"
+                  checked={financialContext.selfEmployed}
+                  onChange={e => setFinancialContext(prev => ({ ...prev, selfEmployed: e.target.checked }))}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span className="text-sm text-secondary font-semibold">I am self-employed / freelancer</span>
+              </label>
+
+              {/* Live DTI Preview */}
+              {financialContext.annualIncome && financialContext.monthlyDebt && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  className="mt-6 p-5 rounded-2xl bg-white/70 border border-amber/50"
+                >
+                  <div className="text-xs font-bold text-secondary uppercase tracking-wider mb-3">Live DTI Preview</div>
+                  {(() => {
+                    const monthly = parseFloat(financialContext.annualIncome) / 12;
+                    const debt = parseFloat(financialContext.monthlyDebt);
+                    const dti = monthly > 0 && !isNaN(debt) ? Math.round((debt / monthly) * 100) : 0;
+                    const barColor = dti < 28 ? 'bg-green-400' : dti < 43 ? 'bg-amber-400' : 'bg-red-400';
+                    const statusLabel = dti < 28 ? 'Excellent' : dti < 36 ? 'Good' : dti < 43 ? 'Manageable' : 'High Risk';
+                    const textColor = dti < 28 ? 'text-green-600' : dti < 36 ? 'text-amber-600' : dti < 43 ? 'text-orange-600' : 'text-red-600';
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-darkwood font-medium">Debt-to-Income Ratio</span>
+                          <span className={`text-sm font-bold ${textColor}`}>{dti}% — {statusLabel}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div className={`${barColor} h-3 rounded-full transition-all`} style={{ width: `${Math.min(dti, 100)}%` }} />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-darkwood mt-1.5">
+                          <span>Ideal: &lt;28%</span><span>Lender max: 43%</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </motion.div>
               )}
+            </div>
+
+            <div className="flex justify-between items-center">
+              <button onClick={() => setStage(2)} className="text-sm text-darkwood hover:text-secondary">
+                ← Back to Credit Access
+              </button>
+              <button
+                onClick={runAiAnalysis}
+                disabled={llmLoading}
+                className="flex items-center space-x-2 bg-primary hover:bg-amber disabled:opacity-50 text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg text-sm"
+              >
+                {llmLoading ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    <span>Running Analysis…</span>
+                  </>
+                ) : (
+                  <>
+                    <FaBolt />
+                    <span>Run AI Analysis</span>
+                  </>
+                )}
+              </button>
+            </div>
+            {llmError && <div className="text-sm text-red-600 text-center">{llmError}</div>}
+          </motion.div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {/* STAGE 4 — Dashboard                                                  */}
+        {/* ───────────────────────────────────────────────────────────────────── */}
+        {stage === 4 && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+
+            {/* Dashboard top bar */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${modeBadgeColor}`}>{modeLabel}</span>
+                <span className="text-xs text-darkwood hidden md:block">
+                  Goal: {GOALS.find(g => g.type === goalType)?.label ?? 'General'} ·
+                  Deadline: {deadlineMonths === 'flexible' ? 'Flexible' : `${deadlineMonths} months`} ·
+                  Target: {targetScore}
+                </span>
+              </div>
+              <button
+                onClick={handleReset}
+                className="text-sm text-darkwood hover:text-secondary flex items-center space-x-1"
+              >
+                <FaTimes className="text-xs" /><span>Start Over</span>
+              </button>
+            </div>
+
+            {/* ── Section 1: Score Header ── */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="rounded-2xl p-8 shadow-2xl bg-gradient-to-br from-secondary via-primary to-amber text-white"
+            >
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                {/* Current score */}
+                <div>
+                  <div className="text-white/60 text-xs uppercase tracking-widest mb-1">Current Score</div>
+                  <motion.div
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 180, damping: 14 }}
+                    className={`text-8xl font-black tabular-nums ${getScoreColor(displayScore)}`}
+                  >
+                    {displayScore}
+                  </motion.div>
+                  <div className="text-white/90 font-semibold mt-1">{scoreBand}</div>
+                  <div className="text-white/50 text-xs mt-0.5">Range: 300 – 850</div>
+                </div>
+                {/* Projected */}
+                {projectedScore && (
+                  <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-5 text-center min-w-[160px]">
+                    <div className="text-white/60 text-xs uppercase tracking-widest mb-1">Projected Score</div>
+                    <div className="text-5xl font-black text-white">{projectedScore}</div>
+                    <div className="text-white/70 text-sm mt-1">
+                      in {aiResult?.credit_summary?.projection_timeline_months ?? 6} months
+                    </div>
+                    <div className="text-green-300 font-bold mt-1">
+                      +{projectedScore - displayScore} pts potential
+                    </div>
+                  </div>
+                )}
+                {/* Goal card */}
+                <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-5 min-w-[150px]">
+                  <div className="text-white/60 text-xs uppercase tracking-widest mb-2">Strategy Target</div>
+                  <div className="font-bold text-white text-sm">
+                    {GOALS.find(g => g.type === goalType)?.label ?? 'Score Improvement'}
+                  </div>
+                  <div className="text-white/60 text-xs mt-1.5">Target score: <span className="text-white font-semibold">{targetScore}</span></div>
+                  <div className="text-white/60 text-xs mt-0.5">
+                    Deadline: <span className="text-white font-semibold">
+                      {deadlineMonths === 'flexible' ? 'Flexible' : `${deadlineMonths} months`}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </motion.div>
 
-            {hasReport && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="frosted-glass rounded-2xl p-8 shadow-2xl mb-8 bg-gradient-to-br from-primary to-secondary"
-              >
-                <div className="flex flex-col md:flex-row items-center justify-between">
-                  <div className="text-white mb-6 md:mb-0">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <FaCreditCard className="text-5xl text-accent" />
-                      <div>
-                        <h2 className="text-2xl font-bold font-serif">Your Credit Score</h2>
-                        <p className="text-accent">Updated today</p>
+            {/* ── Section 2: Credit Factor Breakdown ── */}
+            <div className="frosted-glass rounded-2xl p-7 shadow-xl">
+              <h3 className="text-xl font-bold text-secondary font-serif mb-5">Credit Factor Analysis</h3>
+              <div className="space-y-4">
+                {(
+                  aiResult?.factor_analysis
+                    ? Object.entries(aiResult.factor_analysis)
+                    : ([
+                        ['payment_history', { current: 85, ideal: 100, impact_level: 'High', estimated_score_gain: '0 points', recommendation: 'Keep paying on time every month.' }],
+                        ['utilization', { current: 55, ideal: 30, impact_level: 'High', estimated_score_gain: '20-40 points', recommendation: 'Reduce total balances below 30% of your credit limits.' }],
+                        ['credit_age', { current: 60, ideal: 80, impact_level: 'Medium', estimated_score_gain: '5-10 points', recommendation: 'Keep your oldest accounts open and active.' }],
+                        ['credit_mix', { current: 70, ideal: 70, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Your credit mix looks diverse — maintain it.' }],
+                        ['new_credit', { current: 80, ideal: 80, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Limit new credit applications to avoid inquiry stacking.' }],
+                      ] as [string, FactorData][])
+                ).map(([key, data]: [string, FactorData], idx: number) => (
+                  <motion.div
+                    key={key}
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.07 }}
+                    className="p-4 bg-white/70 rounded-xl border border-amber/30"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-secondary text-sm">{FACTOR_LABELS[key] ?? key}</span>
+                        <span className="text-[10px] text-darkwood/60">({FACTOR_WEIGHTS[key] ?? 0}% of score)</span>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="text-center">
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: 'spring', stiffness: 200, damping: 10 }}
-                      className={`text-7xl font-bold ${getScoreColor(creditScore)} mb-2`}
-                    >
-                      {reportAnalysis?.score ?? creditScore}
-                    </motion.div>
-                    <div className={`flex items-center justify-center space-x-2 text-lg ${scoreChange >= 0 ? 'text-green-300' : 'text-red-300'}`}>
-                      {scoreChange >= 0 ? <FaArrowUp /> : <FaArrowDown />}
-                      <span>{Math.abs(scoreChange)} points this month</span>
-                    </div>
-                    <div className="mt-4 text-accent text-sm">
-                      Range: 300 - 850
-                    </div>
-                  </div>
-
-                  <div className="mt-6 md:mt-0">
-                    <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
-                      <div className="text-accent text-sm mb-2">Credit Rating</div>
-                      <div className="text-white text-2xl font-bold">
-                        {creditScore >= 750 ? 'Excellent' : creditScore >= 670 ? 'Good' : 'Fair'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {hasReport && (
-              <div className="grid lg:grid-cols-2 gap-8 mb-8">
-                <motion.div
-                  initial={{ opacity: 0, x: -30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="frosted-glass rounded-2xl p-8 shadow-xl"
-                >
-                  <h3 className="text-2xl font-bold text-secondary mb-6 font-serif">
-                    Credit Factors
-                  </h3>
-                  <div className="space-y-6">
-                    {creditFactors.map((factor, index) => (
-                      <div key={index}>
-                        <div className="flex justify-between mb-2">
-                          <span className="font-medium text-secondary">{factor.name}</span>
-                          <span className="text-primary">{factor.percentage}%</span>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <div className="flex-1 bg-gray-200 rounded-full h-3">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${factor.percentage}%` }}
-                              transition={{ duration: 1, delay: index * 0.1 }}
-                              className={`${getStatusColor(factor.status)} h-3 rounded-full`}
-                            />
-                          </div>
-                          <span className={`text-sm capitalize px-3 py-1 rounded-full ${
-                            factor.status === 'excellent' ? 'bg-green-100 text-green-700' :
-                            factor.status === 'good' ? 'bg-amber bg-opacity-20 text-primary' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {factor.status}
+                      <div className="flex items-center space-x-2">
+                        {data.estimated_score_gain && !data.estimated_score_gain.startsWith('0') && (
+                          <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                            +{data.estimated_score_gain}
                           </span>
-                        </div>
-                        <div className="text-xs text-darkwood mt-1">
-                          Impact: {factor.impact}% of score
-                        </div>
+                        )}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${getImpactColor(data.impact_level)}`}>
+                          {data.impact_level} Impact
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </motion.div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-2.5">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${data.current}%` }}
+                          transition={{ duration: 0.8, delay: idx * 0.07 }}
+                          className={`h-2.5 rounded-full ${getFactorBarColor(data.current, data.ideal)}`}
+                        />
+                      </div>
+                      <span className="text-xs text-secondary font-bold w-10 text-right">{data.current}%</span>
+                      <span className="text-[10px] text-darkwood w-14">ideal: {data.ideal}%</span>
+                    </div>
+                    <p className="text-xs text-darkwood">
+                      <span className="font-semibold text-secondary">AI Insight:</span> {data.recommendation}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
 
-                <motion.div
-                  initial={{ opacity: 0, x: 30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="frosted-glass rounded-2xl p-8 shadow-xl"
-                >
-                  <h3 className="text-2xl font-bold text-secondary mb-6 font-serif">
-                    Your Action Plan
-                  </h3>
-                  <div className="space-y-4">
-                    {tasks.map((task) => (
-                      <div
-                        key={task.id}
-                        onClick={() => !task.completed && user && handleTaskComplete(task.id, task.points)}
-                        className={`p-4 rounded-lg border-2 transition-all ${
-                          task.completed
-                            ? 'bg-green-50 border-green-300'
-                            : 'bg-white border-amber hover:border-primary cursor-pointer'
+            {/* ── Section 3: Goal Readiness + DTI ── */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Goal Readiness */}
+              <div className="frosted-glass rounded-2xl p-6 shadow-xl">
+                <h3 className="text-xl font-bold text-secondary font-serif mb-4">Goal Readiness</h3>
+                {readinessPct !== null ? (
+                  <>
+                    <div className="relative w-40 h-40 mx-auto mb-4">
+                      <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="15.5" fill="none" stroke="#f0f0f0" strokeWidth="3.5" />
+                        <motion.circle
+                          cx="18" cy="18" r="15.5" fill="none"
+                          stroke={readinessPct >= 70 ? '#22c55e' : readinessPct >= 45 ? '#f59e0b' : '#ef4444'}
+                          strokeWidth="3.5"
+                          strokeDasharray={`${readinessPct} 100`}
+                          strokeLinecap="round"
+                          initial={{ strokeDasharray: '0 100' }}
+                          animate={{ strokeDasharray: `${readinessPct} 100` }}
+                          transition={{ duration: 1.2, ease: 'easeOut' }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-3xl font-black text-secondary">{readinessPct}%</span>
+                        <span className="text-xs text-darkwood font-medium mt-0.5">Ready</span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-darkwood text-center">
+                      {aiResult?.goal_alignment?.notes ?? 'Follow the action plan below to improve your readiness score.'}
+                    </p>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-center">
+                      {[['<45%', 'Build First', 'bg-red-50 text-red-600'], ['45–70%', 'Almost Ready', 'bg-amber-50 text-amber-600'], ['>70%', 'Ready', 'bg-green-50 text-green-600']].map(([range, label, cls]) => (
+                        <div key={range} className={`rounded-lg p-1.5 ${cls}`}>
+                          <div className="font-bold">{range}</div>
+                          <div>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-darkwood py-4 text-center">Readiness score computed from AI analysis.</div>
+                )}
+              </div>
+
+              {/* DTI Indicator */}
+              <div className="frosted-glass rounded-2xl p-6 shadow-xl">
+                <h3 className="text-xl font-bold text-secondary font-serif mb-4">DTI Indicator</h3>
+                {dtiPct !== null ? (
+                  <>
+                    <div className="flex items-end justify-between mb-3">
+                      <div>
+                        <div className="text-xs text-darkwood mb-1">Debt-to-Income Ratio</div>
+                        <span
+                          className={`text-4xl font-black ${
+                            dtiPct >= 43 ? 'text-red-500' : dtiPct >= 36 ? 'text-amber-500' : 'text-green-500'
+                          }`}
+                        >
+                          {dtiPct}%
+                        </span>
+                      </div>
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded-full ${
+                          dtiPct >= 43 ? 'bg-red-100 text-red-700' : dtiPct >= 36 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                         }`}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-3">
-                            {task.completed ? (
-                              <FaCheckCircle className="text-green-500 text-xl mt-1" />
-                            ) : (
-                              <div className="w-5 h-5 border-2 border-primary rounded-full mt-1" />
-                            )}
-                            <div>
-                              <p className={`font-medium ${task.completed ? 'text-green-700 line-through' : 'text-secondary'}`}>
-                                {task.title}
-                              </p>
-                              <p className="text-sm text-primary mt-1">+{task.points} points</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        {dtiPct < 28 ? 'Excellent' : dtiPct < 36 ? 'Good' : dtiPct < 43 ? 'Manageable' : 'High Risk'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(dtiPct, 100)}%` }}
+                        transition={{ duration: 1 }}
+                        className={`h-3 rounded-full ${dtiPct >= 43 ? 'bg-red-400' : dtiPct >= 36 ? 'bg-amber-400' : 'bg-green-400'}`}
+                      />
+                    </div>
+                    <div className="space-y-1.5 text-xs text-darkwood">
+                      <div className="flex justify-between"><span>Ideal (best rates)</span><span className="font-semibold text-green-600">&lt; 28%</span></div>
+                      <div className="flex justify-between"><span>Lender maximum</span><span className="font-semibold text-amber-600">43%</span></div>
+                      <div className="flex justify-between"><span>Your ratio</span><span className={`font-bold ${dtiPct >= 43 ? 'text-red-600' : dtiPct >= 36 ? 'text-amber-600' : 'text-green-600'}`}>{dtiPct}%</span></div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-darkwood py-4 text-center">
+                    Enter income and monthly debt in Stage 3 to compute your DTI.
                   </div>
-
-                  <div className="mt-6 p-4 bg-gradient-to-r from-primary to-amber rounded-lg text-white text-center">
-                    <div className="text-3xl font-bold mb-1">
-                      {tasks.filter(t => t.completed).length} / {tasks.length}
-                    </div>
-                    <div className="text-sm">Tasks Completed</div>
-                  </div>
-                </motion.div>
+                )}
               </div>
-            )}
+            </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="frosted-glass rounded-2xl p-8 shadow-xl mb-8"
-              ref={uploadSectionRef}
-              id="credit-report-upload"
-            >
-              <div className="grid lg:grid-cols-[1fr_0.9fr] gap-6 mb-8">
-                <div className="bg-white/80 rounded-2xl p-6 border border-amber">
-                  <h4 className="text-lg font-semibold text-secondary mb-3">Upload Workflow</h4>
-                  <ol className="space-y-2 text-sm text-darkwood">
-                    <li className="flex items-start space-x-2">
-                      <span className="text-primary font-semibold">01.</span>
-                      <span>Accept the user agreement for sensitive data.</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-primary font-semibold">02.</span>
-                      <span>Upload your PDF/TXT report (stored securely in Firebase).</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-primary font-semibold">03.</span>
-                      <span>We analyze key signals and generate an action plan.</span>
-                    </li>
-                  </ol>
-                </div>
-                <div className="bg-white/80 rounded-2xl p-6 border border-amber">
-                  <h4 className="text-lg font-semibold text-secondary mb-3">Get a Free Credit Report</h4>
-                  <a
-                    href="https://www.annualcreditreport.com/"
-                    className="inline-flex items-center space-x-2 bg-primary hover:bg-amber text-white text-sm font-semibold px-4 py-2 rounded-full mb-4"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <span>Go to AnnualCreditReport.com</span>
-                  </a>
-                  <ul className="space-y-2 text-sm text-darkwood">
-                    <li className="flex items-center space-x-2">
-                      <FaLink className="text-primary" />
-                      <a href="https://www.annualcreditreport.com/" className="underline" target="_blank" rel="noreferrer">
-                        AnnualCreditReport.com (official)
-                      </a>
-                    </li>
-                    <li className="flex items-center space-x-2">
-                      <FaLink className="text-primary" />
-                      <a href="https://www.experian.com/" className="underline" target="_blank" rel="noreferrer">
-                        Experian Free Report
-                      </a>
-                    </li>
-                    <li className="flex items-center space-x-2">
-                      <FaLink className="text-primary" />
-                      <a href="https://www.equifax.com/personal/credit-report-services/free-credit-reports/" className="underline" target="_blank" rel="noreferrer">
-                        Equifax Free Report
-                      </a>
-                    </li>
-                    <li className="flex items-center space-x-2">
-                      <FaLink className="text-primary" />
-                      <a href="https://www.transunion.com/" className="underline" target="_blank" rel="noreferrer">
-                        TransUnion Free Report
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-secondary mb-2 font-serif">
-                    Upload Your Credit Report
-                  </h3>
-                  <p className="text-darkwood">
-                    Drop a PDF or TXT report to get instant insights. Stored securely and analyzed with AI.
-                  </p>
-                </div>
-                <div className="flex items-center space-x-2 text-sm text-primary">
-                  <FaShieldAlt />
-                  <span>Secure storage + audit trail</span>
-                </div>
-              </div>
-
-              <div className="mt-6 grid lg:grid-cols-2 gap-6">
-                <label className="relative border-2 border-dashed border-amber rounded-2xl p-6 flex flex-col items-center justify-center text-center bg-white/80 hover:border-primary transition-all cursor-pointer">
-                  <FaCloudUploadAlt className="text-4xl text-primary mb-3" />
-                  <span className="font-semibold text-secondary">Click to upload</span>
-                  <span className="text-sm text-darkwood mt-2">PDF, TXT, or CSV</span>
-                  <input
-                    type="file"
-                    accept=".pdf,.txt,.csv"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    onChange={(event) => handleReportUpload(event.target.files?.[0] ?? null)}
-                  />
-                  {reportFileName && (
-                    <div className="mt-4 flex items-center space-x-2 text-sm text-primary">
-                      <FaFileAlt />
-                      <span>{reportFileName}</span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowAgreement(true)}
-                    className="mt-4 text-xs text-secondary underline"
-                  >
-                    View user agreement
-                  </button>
-                </label>
-
-                <div className="bg-white/80 rounded-2xl p-6 shadow-inner">
-                  {reportLoading && (
-                    <div className="flex flex-col items-center justify-center text-center h-full">
-                      <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-primary border-t-transparent"></div>
-                      <p className="mt-3 text-darkwood">Analyzing your report...</p>
-                    </div>
-                  )}
-
-                  {!reportLoading && reportError && (
-                    <div className="text-red-600 font-medium">{reportError}</div>
-                  )}
-
-                  {!reportLoading && !reportError && !reportAnalysis && (
-                    <div className="text-darkwood">
-                      Upload a report to see personalized insights and recommendations.
-                    </div>
-                  )}
-
-                  {!reportLoading && reportAnalysis && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm text-darkwood">Detected Score</div>
-                        <div className="text-2xl font-bold text-secondary">
-                          {reportAnalysis.score ?? 'N/A'}
-                        </div>
-                      </div>
-
-                      {reportAnalysis.positives.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-green-700 mb-2">Positive Signals</h4>
-                          <ul className="space-y-2 text-sm text-green-700">
-                            {reportAnalysis.positives.map((item, index) => (
-                              <li key={`positive-${index}`} className="flex items-start space-x-2">
-                                <FaCheckCircle className="mt-0.5" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {reportAnalysis.warnings.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-amber mb-2">Areas to Improve</h4>
-                          <ul className="space-y-2 text-sm text-amber">
-                            {reportAnalysis.warnings.map((item, index) => (
-                              <li key={`warning-${index}`} className="flex items-start space-x-2">
-                                <FaExclamationTriangle className="mt-0.5" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {reportAnalysis.recommendations.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-primary mb-2">Recommended Actions</h4>
-                          <ul className="space-y-2 text-sm text-darkwood">
-                            {reportAnalysis.recommendations.map((item, index) => (
-                              <li key={`rec-${index}`} className="flex items-start space-x-2">
-                                <FaLightbulb className="text-primary mt-0.5" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <div className="pt-4 border-t border-amber/30">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                          <div>
-                            <h4 className="text-sm font-semibold text-secondary">AI Financial Advice</h4>
-                            <p className="text-xs text-darkwood">
-                              Auto-generated after upload. You can refresh it anytime.
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => requestLlmAdvice()}
-                            disabled={llmLoading}
-                            className="bg-primary hover:bg-amber text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all disabled:opacity-70"
+            {/* ── Section 4: AI Action Timeline ── */}
+            {aiResult?.action_plan && aiResult.action_plan.length > 0 && (
+              <div className="frosted-glass rounded-2xl p-7 shadow-xl">
+                <h3 className="text-xl font-bold text-secondary font-serif mb-2">AI Action Timeline</h3>
+                <p className="text-xs text-darkwood mb-5">
+                  Phased strategy personalised to your goal. Expand each phase to see steps.
+                </p>
+                <div className="space-y-3">
+                  {aiResult.action_plan.map(({ phase, steps }, idx) => (
+                    <div
+                      key={phase}
+                      className={`rounded-xl border overflow-hidden ${
+                        idx === 0 ? 'border-primary/40' : idx === 1 ? 'border-amber/50' : 'border-gray-200'
+                      }`}
+                    >
+                      <button
+                        onClick={() => setExpandedPhase(expandedPhase === phase ? null : phase)}
+                        className={`w-full flex items-center justify-between px-5 py-4 text-left transition-all ${
+                          expandedPhase === phase ? 'bg-primary/5' : 'bg-white/60 hover:bg-white/90'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                              idx === 0 ? 'bg-primary text-white' : idx === 1 ? 'bg-amber text-white' : 'bg-gray-200 text-gray-600'
+                            }`}
                           >
-                            {llmLoading ? 'Generating...' : 'Regenerate Advice'}
-                          </button>
-                        </div>
-
-                        {llmError && (
-                          <div className="mt-3 text-sm text-red-600">{llmError}</div>
-                        )}
-
-                        {llmAdvice && (
-                          <div className="mt-3 p-4 bg-white/80 rounded-xl text-sm text-darkwood markdown-output">
-                            <ReactMarkdown>{llmAdvice}</ReactMarkdown>
+                            {idx + 1}
                           </div>
+                          <span className="font-bold text-secondary">{phase}</span>
+                          <span className="text-xs text-darkwood hidden sm:block">· {steps.length} action{steps.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {expandedPhase === phase
+                          ? <FaChevronUp className="text-primary text-xs flex-shrink-0" />
+                          : <FaChevronDown className="text-darkwood text-xs flex-shrink-0" />}
+                      </button>
+                      <AnimatePresence>
+                        {expandedPhase === phase && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.22 }}
+                          >
+                            <div className="px-5 pb-5 pt-3 bg-white/40 border-t border-amber/20">
+                              <ol className="space-y-2.5">
+                                {steps.map((step, si) => (
+                                  <li key={si} className="flex items-start space-x-3 text-sm text-darkwood">
+                                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[11px] flex items-center justify-center flex-shrink-0 font-bold mt-0.5">
+                                      {si + 1}
+                                    </span>
+                                    <span>{step}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          </motion.div>
                         )}
-                      </div>
+                      </AnimatePresence>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="frosted-glass rounded-2xl p-8 shadow-xl mb-8"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-secondary mb-2 font-serif">Soft Pull Credit Check</h3>
-                  <p className="text-darkwood text-sm">
-                    Soft pulls require a third-party bureau integration (Experian). We will enable this once credentials
-                    are configured.
-                  </p>
-                </div>
-                <button
-                  onClick={requestSoftPull}
-                  disabled={softPullLoading}
-                  className="bg-primary hover:bg-amber text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all disabled:opacity-70"
-                >
-                  {softPullLoading ? 'Requesting...' : 'Request Soft Pull'}
-                </button>
-              </div>
-              {softPullStatus && <div className="mt-4 text-sm text-darkwood">{softPullStatus}</div>}
-            </motion.div>
-
-            {hasReport && (
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="frosted-glass rounded-2xl p-8 shadow-xl"
-              >
-                <h3 className="text-2xl font-bold text-secondary mb-6 font-serif">
-                  Expert Tips
-                </h3>
-                <div className="grid md:grid-cols-3 gap-6">
-                  {tips.map((tip, index) => {
-                    const Icon = tip.icon;
-                    return (
-                      <div key={index} className="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-all">
-                        <Icon className="text-4xl text-primary mb-4" />
-                        <h4 className="text-lg font-bold text-secondary mb-2">{tip.title}</h4>
-                        <p className="text-darkwood text-sm">{tip.description}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
             )}
-          </>
+
+            {/* ── Section 5: Risk Alerts ── */}
+            {aiResult?.risk_alerts && aiResult.risk_alerts.length > 0 && (
+              <div className="frosted-glass rounded-2xl p-6 shadow-xl border-l-4 border-red-400">
+                <div className="flex items-center space-x-2 mb-4">
+                  <FaExclamationTriangle className="text-red-500" />
+                  <h3 className="text-xl font-bold text-secondary font-serif">Risk Alerts</h3>
+                </div>
+                <div className="space-y-2.5">
+                  {aiResult.risk_alerts.map((alert, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start space-x-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3"
+                    >
+                      <FaExclamationTriangle className="text-red-500 text-sm flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-red-700">{alert}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Edge Case: Rebuild Mode ── */}
+            {displayScore < 580 && (
+              <div className="rounded-2xl p-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 shadow-md">
+                <h3 className="text-lg font-bold text-red-700 font-serif mb-2">🔨 Rebuild Mode — Foundation First</h3>
+                <p className="text-sm text-red-600 mb-4">
+                  Your score is in the rebuilding range. These tools are designed specifically to build from the ground up:
+                </p>
+                <ul className="space-y-2 text-sm text-red-700">
+                  {[
+                    'Open a secured credit card (deposit-backed, reports to all 3 bureaus)',
+                    'Apply for a credit-builder loan from a local credit union',
+                    'Enroll in rent/utility reporting (Experian Boost, RentReporters)',
+                    'Dispute all errors on your credit report via AnnualCreditReport.com',
+                    'Keep any existing accounts open — age matters even for thin files',
+                  ].map(item => (
+                    <li key={item} className="flex items-start space-x-2">
+                      <FaCheck className="text-red-400 flex-shrink-0 mt-0.5" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* ── Edge Case: Optimization Mode ── */}
+            {displayScore > 760 && (
+              <div className="rounded-2xl p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 shadow-md">
+                <h3 className="text-lg font-bold text-green-700 font-serif mb-2">✨ Optimization Mode — Maximize Your Score</h3>
+                <p className="text-sm text-green-600 mb-4">
+                  Your score is excellent. Shift focus to protecting and capitalizing on your credit strength:
+                </p>
+                <ul className="space-y-2 text-sm text-green-700">
+                  {[
+                    'Apply for premium rewards cards (travel, cash-back, business perks)',
+                    'Request credit limit increases on existing cards every 6 months',
+                    'Keep utilization below 10% for maximum VantageScore and FICO impact',
+                    'Monitor credit monthly with Experian CreditLock or Equifax alerts',
+                    'Use credit for regular purchases and pay in full every cycle',
+                  ].map(item => (
+                    <li key={item} className="flex items-start space-x-2">
+                      <FaCheck className="text-green-500 flex-shrink-0 mt-0.5" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* ── Full AI Advice (markdown) ── */}
+            {llmAdvice && (
+              <div className="frosted-glass rounded-2xl p-7 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-secondary font-serif">Full AI Analysis</h3>
+                  <button
+                    onClick={runAiAnalysis}
+                    disabled={llmLoading}
+                    className="bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    {llmLoading ? 'Regenerating…' : 'Regenerate'}
+                  </button>
+                </div>
+                <div className="prose prose-sm max-w-none text-darkwood markdown-output">
+                  <ReactMarkdown>{llmAdvice}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+
+            {/* ── Disclaimer ── */}
+            <div className="rounded-xl bg-white/50 border border-amber/30 px-5 py-3 text-xs text-darkwood/60 text-center">
+              <FaShieldAlt className="inline mr-1 text-primary/40" />
+              AI-generated strategy for educational purposes only. Not financial, legal, or credit repair advice. Results and score projections may vary.
+            </div>
+          </motion.div>
         )}
+
       </div>
     </div>
   );

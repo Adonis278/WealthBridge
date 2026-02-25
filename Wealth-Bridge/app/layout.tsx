@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ClientLayout from "@/components/ClientLayout";
 
@@ -17,12 +17,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <Script
-          src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
-          strategy="beforeInteractive"
-        />
-      </head>
       <body suppressHydrationWarning>
         <AuthProvider>
           <ClientLayout>
@@ -30,6 +24,7 @@ export default function RootLayout({
             <main className="relative z-10">
               {children}
             </main>
+            <Footer />
           </ClientLayout>
         </AuthProvider>
       </body>
