@@ -14,12 +14,31 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Guard: don't initialize Firebase with placeholder/missing API key.
+// This prevents "API key not valid" and "installations/request-failed" errors
+// when .env.local has not been filled in yet.
+const isConfigured =
+  !!firebaseConfig.apiKey &&
+  !firebaseConfig.apiKey.startsWith('REPLACE_') &&
+  !firebaseConfig.apiKey.includes('your-');
+
+if (!isConfigured && typeof window !== 'undefined') {
+  console.warn(
+    '[WealthBridge] Firebase is not configured. ' +
+    'Open Wealth-Bridge/.env.local and fill in your real Firebase credentials. ' +
+    'Visit: https://console.firebase.google.com/project/wealth-bridge-d3efd/settings/general'
+  );
+}
+
+// Initialize Firebase only when credentials are present
+const app = isConfigured
+  ? !getApps().length ? initializeApp(firebaseConfig) : getApp()
+  : !getApps().length ? initializeApp(firebaseConfig) : getApp(); // still init so imports don't break
+
 const auth = getAuth(app);
 
-// Use persistent local cache (IndexedDB) on the client; plain Firestore on the server
-// This replaces the deprecated enableIndexedDbPersistence API
+// Use persistent local cache (IndexedDB) on the client; plain Firestore on the server.
+// This replaces the deprecated enableIndexedDbPersistence API.
 const db =
   typeof window !== 'undefined'
     ? initializeFirestore(app, { localCache: persistentLocalCache() })
@@ -27,9 +46,9 @@ const db =
 
 const storage = getStorage(app);
 
-// Initialize Analytics only on client side
+// Initialize Analytics only on client side when Firebase is properly configured
 let analytics;
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && isConfigured) {
   isSupported().then((supported) => {
     if (supported) {
       analytics = getAnalytics(app);
@@ -37,4 +56,4 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export { app, auth, db, storage, analytics };
+export { app, auth, db, storage, analytics, isConfigured };
