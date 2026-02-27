@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     const text = typeof body?.text === 'string' ? body.text : '';
     const score = typeof body?.score === 'number' ? body.score : undefined;
     const reportId = typeof body?.reportId === 'string' ? body.reportId : undefined;
+    const userId = typeof body?.userId === 'string' ? body.userId : undefined;
     const profile = body?.profile ?? {};
 
     if (!text) {
@@ -112,10 +113,14 @@ ${text}`;
       result = null;
     }
 
-    if (reportId && advice) {
-      await addDoc(collection(db, 'creditReportAdvice'), {
-        reportId,
+    if (advice) {
+      await addDoc(collection(db, 'creditAnalysisResults'), {
+        reportId: reportId ?? null,
+        userId: userId ?? null,
+        result,
         advice,
+        score: (result as any)?.credit_summary?.current_score ?? null,
+        projectedScore: (result as any)?.credit_summary?.projected_score ?? null,
         createdAt: serverTimestamp(),
       });
     }

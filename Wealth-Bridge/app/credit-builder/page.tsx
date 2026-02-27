@@ -121,6 +121,7 @@ export default function CreditBuilderPage() {
   const [llmError, setLlmError] = useState<string | null>(null);
   const [expandedPhase, setExpandedPhase] = useState<string | null>('Month 1-2');
   const [creditScore, setCreditScore] = useState(680);
+  const [analysisSaved, setAnalysisSaved] = useState(false);
 
   const uploadRef = useRef<HTMLDivElement | null>(null);
 
@@ -274,6 +275,7 @@ export default function CreditBuilderPage() {
           text: reportText.slice(0, 12000),
           score: reportAnalysis?.score ?? null,
           reportId: reportUploadId,
+          userId: user?.uid ?? null,
           profile: { goalType, targetScore, deadlineMonths, majorApplications },
           financialContext,
         }),
@@ -281,8 +283,29 @@ export default function CreditBuilderPage() {
       if (!resp.ok) throw new Error('AI analysis failed. Please try again.');
       const data = await resp.json();
       if (data.result) {
-        setAiResult(data.result as AiResult);
-        if (user) addPoints(user.uid, 100).catch(console.error);
+        const parsed = data.result as AiResult;
+        setAiResult(parsed);
+        if (user) {
+          try {
+            await addDoc(collection(db, 'creditAnalysisResults'), {
+              userId: user.uid,
+              reportId: reportUploadId ?? null,
+              goalType,
+              targetScore,
+              deadlineMonths,
+              score: parsed.credit_summary?.current_score ?? null,
+              projectedScore: parsed.credit_summary?.projected_score ?? null,
+              scoreBand: parsed.credit_summary?.score_band ?? null,
+              riskAlerts: parsed.risk_alerts ?? [],
+              result: parsed,
+              createdAt: serverTimestamp(),
+            });
+            setAnalysisSaved(true);
+          } catch (saveErr) {
+            console.error('Failed to save analysis to Firestore:', saveErr);
+          }
+          addPoints(user.uid, 100).catch(console.error);
+        }
       }
       if (data.advice) setLlmAdvice(data.advice);
       setStage(4);
@@ -323,6 +346,7 @@ export default function CreditBuilderPage() {
     setReportAnalysis(null);
     setReportFileName(null);
     setReportError(null);
+    setAnalysisSaved(false);
     setFinancialContext({ occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '', totalCreditLimit: '', savings: '', selfEmployed: false });
   };
 
@@ -860,6 +884,29 @@ export default function CreditBuilderPage() {
         {/* ───────────────────────────────────────────────────────────────────── */}
         {stage === 4 && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+
+            {/* ── Save confirmation banner ── */}
+            <AnimatePresence>
+              {analysisSaved && (
+                <motion.div
+                  initial={{ opacity: 0, y: -12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  className="flex items-center justify-between gap-3 bg-primary/10 border border-primary/30 rounded-xl px-5 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <FaCheckCircle className="text-primary text-lg flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-secondary">Analysis saved to your profile</p>
+                      <p className="text-xs text-darkwood">Stored in Firebase under your account · +100 XP awarded</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setAnalysisSaved(false)} className="text-darkwood/50 hover:text-secondary">
+                    <FaTimes className="text-sm" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Dashboard top bar */}
             <div className="flex items-center justify-between">
