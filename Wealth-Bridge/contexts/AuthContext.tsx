@@ -65,19 +65,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
       
-      // Create user document in Firestore
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName,
-        photoURL: '',
-        createdAt: serverTimestamp(),
-        level: 1,
-        points: 0,
-        streak: 0,
-        achievements: [],
-        lastLoginDate: serverTimestamp(),
-      });
+      try {
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName,
+          photoURL: '',
+          createdAt: serverTimestamp(),
+          level: 1,
+          points: 0,
+          streak: 0,
+          achievements: [],
+          lastLoginDate: serverTimestamp(),
+        });
+      } catch (error) {
+        console.warn('User created but profile document save failed:', error);
+      }
     }
   };
 

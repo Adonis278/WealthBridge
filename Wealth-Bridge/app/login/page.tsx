@@ -7,6 +7,8 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { executeRecaptcha } from '@/lib/recaptcha';
+import { RECAPTCHA_SITE_KEY } from '@/lib/recaptcha';
+import { getAuthErrorMessage } from '@/lib/authErrorMessages';
 import { FaLeaf, FaGoogle, FaEnvelope, FaLock, FaPhone, FaShieldAlt } from 'react-icons/fa';
 
 export default function LoginPage() {
@@ -33,8 +35,8 @@ export default function LoginPage() {
       
       await signIn(email, password);
       router.push('/navigator');
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Failed to sign in. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -59,8 +61,8 @@ export default function LoginPage() {
         await verifyOTP(otp);
         router.push('/navigator');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in with phone');
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Failed to sign in with phone. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -77,8 +79,8 @@ export default function LoginPage() {
       
       await signInWithGoogle();
       router.push('/navigator');
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in with Google');
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Failed to sign in with Google. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -86,10 +88,12 @@ export default function LoginPage() {
 
   return (
     <>
-      <Script
-        src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
-        strategy="afterInteractive"
-      />
+      {RECAPTCHA_SITE_KEY && (
+        <Script
+          src={`https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_SITE_KEY}`}
+          strategy="afterInteractive"
+        />
+      )}
       <div className="min-h-screen bg-gradient-sunset flex items-center justify-center py-12 px-4">
         <motion.div
         initial={{ opacity: 0, y: 20 }}
