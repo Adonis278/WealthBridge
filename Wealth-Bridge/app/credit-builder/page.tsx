@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaCreditCard, FaCheckCircle, FaExclamationTriangle, FaCloudUploadAlt, FaFileAlt,
@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getCreditScore } from '@/lib/creditService';
 import { addPoints } from '@/lib/gamificationService';
 import { db, storage } from '@/lib/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
@@ -46,6 +46,15 @@ interface AiResult {
   goal_alignment: { readiness_score_percent: number; dti_percent?: number | null; notes?: string };
   risk_alerts: string[];
   action_plan: Array<{ phase: string; steps: string[] }>;
+}
+
+interface StrategyReportSection {
+  index: number;
+  marker: string;
+  title: string;
+  heading: string;
+  key: string;
+  content: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -80,6 +89,69 @@ const FACTOR_WEIGHTS: Record<string, number> = {
   credit_mix: 10,
   new_credit: 10,
 };
+
+const REPORT_SECTION_DEFS = [
+  { marker: '1️⃣', key: 'why-score', title: 'WHY YOUR SCORE IS' },
+  { marker: '2️⃣', key: 'drivers', title: 'TOP SCORE DRIVERS (RANKED BY IMPACT)' },
+  { marker: '3️⃣', key: 'utilization-math', title: 'CREDIT UTILIZATION – SHOW THE MATH' },
+  { marker: '4️⃣', key: 'negative-strategy', title: 'NEGATIVE ACCOUNTS STRATEGY' },
+  { marker: '5️⃣', key: 'dti-analysis', title: 'DEBT-TO-INCOME (DTI) ANALYSIS' },
+  { marker: '6️⃣', key: 'goal-readiness', title: 'GOAL READINESS ANALYSIS' },
+  { marker: '7️⃣', key: 'priority-plan', title: 'PRIORITY ACTION PLAN (RANKED)' },
+  { marker: '8️⃣', key: 'projection-scenarios', title: 'SCORE PROJECTION SCENARIOS' },
+  { marker: '9️⃣', key: 'what-not-to-do', title: 'WHAT NOT TO DO' },
+  { marker: '🔟', key: 'summary', title: 'SUMMARY' },
+] as const;
+
+const REPORT_MARKERS = REPORT_SECTION_DEFS.map((d) => d.marker);
+
+function parseStrategyReportSections(markdown: string): StrategyReportSection[] {
+  if (!markdown.trim()) return [];
+
+  const headingRegex = /^\s{0,3}(?:#{1,6}\s*)?(1️⃣|2️⃣|3️⃣|4️⃣|5️⃣|6️⃣|7️⃣|8️⃣|9️⃣|🔟)\s*(.*)$/;
+  const lines = markdown.split(/\r?\n/);
+
+  const sections: StrategyReportSection[] = [];
+  let current: StrategyReportSection | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    current.content = current.content.trim();
+    sections.push(current);
+    current = null;
+  };
+
+  for (const line of lines) {
+    const match = line.match(headingRegex);
+    if (match) {
+      flush();
+      const marker = match[1] as (typeof REPORT_MARKERS)[number];
+      const inlineTitle = match[2]?.trim();
+      const idx = REPORT_MARKERS.indexOf(marker);
+      const def = idx >= 0 ? REPORT_SECTION_DEFS[idx] : null;
+      const title = inlineTitle || def?.title || 'Section';
+      current = {
+        index: idx >= 0 ? idx + 1 : sections.length + 1,
+        marker,
+        title,
+        heading: `${marker} ${title}`,
+        key: def?.key || `${marker}-${sections.length + 1}`,
+        content: '',
+      };
+      continue;
+    }
+
+    if (current) {
+      current.content += `${line}\n`;
+    }
+  }
+
+  flush();
+
+  return sections
+    .filter((s) => s.content.length > 0)
+    .sort((a, b) => a.index - b.index);
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CreditBuilderPage() {
@@ -121,9 +193,23 @@ export default function CreditBuilderPage() {
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [expandedPhase, setExpandedPhase] = useState<string | null>('Month 1-2');
+  const [activeReportSectionKey, setActiveReportSectionKey] = useState<string | null>(null);
+  const [expandedReportSections, setExpandedReportSections] = useState<Record<string, boolean>>({});
+  const [showAllReportSections, setShowAllReportSections] = useState(false);
   const [creditScore, setCreditScore] = useState(680);
+  const [restoredAnalysisLabel, setRestoredAnalysisLabel] = useState<string | null>(null);
+  const [analysisLookupLoading, setAnalysisLookupLoading] = useState(false);
+  const [hasSavedAnalysis, setHasSavedAnalysis] = useState<boolean | null>(null);
 
   const uploadRef = useRef<HTMLDivElement | null>(null);
+
+  const reportSections = useMemo(
+    () => (llmAdvice ? parseStrategyReportSections(llmAdvice) : []),
+    [llmAdvice]
+  );
+
+  const activeReportSection = reportSections.find((section) => section.key === activeReportSectionKey) ?? reportSections[0] ?? null;
+  const reportCoveragePercent = Math.round((reportSections.length / REPORT_SECTION_DEFS.length) * 100);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const displayScore = aiResult?.credit_summary?.current_score ?? reportAnalysis?.score ?? creditScore;
@@ -153,6 +239,27 @@ export default function CreditBuilderPage() {
     return 'text-red-400';
   }
 
+  function getReportSectionTone(sectionKey: string) {
+    if (sectionKey === 'drivers' || sectionKey === 'utilization-math' || sectionKey === 'negative-strategy') {
+      return 'border-red-200 bg-red-50/60 text-red-700';
+    }
+    if (sectionKey === 'priority-plan' || sectionKey === 'projection-scenarios') {
+      return 'border-amber-200 bg-amber-50/60 text-amber-700';
+    }
+    if (sectionKey === 'summary' || sectionKey === 'goal-readiness') {
+      return 'border-green-200 bg-green-50/60 text-green-700';
+    }
+    return 'border-primary/20 bg-primary/5 text-secondary';
+  }
+
+  function getSectionPreview(section: StrategyReportSection) {
+    const plain = section.content
+      .replace(/[*_#>`-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return plain.length > 120 ? `${plain.slice(0, 120)}…` : plain;
+  }
+
   function getImpactColor(level: string) {
     if (level === 'High') return 'text-red-600 bg-red-50 border-red-200';
     if (level === 'Medium') return 'text-amber-600 bg-amber-50 border-amber-200';
@@ -174,6 +281,88 @@ export default function CreditBuilderPage() {
       if (result.success && result.data) setCreditScore(result.data.currentScore);
     };
     load().catch(console.error);
+  }, [user]);
+
+  // ── Restore latest saved full analysis on login ──────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const restoreLatestAnalysis = async () => {
+      setAnalysisLookupLoading(true);
+      try {
+        const q = query(
+          collection(db, 'creditAnalysisResults'),
+          where('userId', '==', user.uid),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+
+        if (snap.empty) {
+          setHasSavedAnalysis(false);
+          setStage(1);
+          setAiResult(null);
+          setLlmAdvice(null);
+          setReportText(null);
+          setReportAnalysis(null);
+          setReportFileName(null);
+          setReportUploadId(null);
+          setRestoredAnalysisLabel(null);
+          return;
+        }
+
+        const docs = snap.docs
+          .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
+          .sort((a, b) => {
+            const aTs = a.createdAt?.seconds ? Number(a.createdAt.seconds) : 0;
+            const bTs = b.createdAt?.seconds ? Number(b.createdAt.seconds) : 0;
+            return bTs - aTs;
+          });
+
+        const latest = docs[0];
+        setHasSavedAnalysis(true);
+
+        if (latest.goalType) setGoalType(latest.goalType as GoalType);
+        if (latest.targetScore) setTargetScore(String(latest.targetScore));
+        if (latest.deadlineMonths) setDeadlineMonths(String(latest.deadlineMonths));
+        if (latest.majorApplications) setMajorApplications(String(latest.majorApplications));
+
+        if (latest.financialContext) {
+          setFinancialContext((prev) => ({
+            ...prev,
+            ...latest.financialContext,
+          }));
+        }
+
+        if (latest.reportAnalysis) setReportAnalysis(latest.reportAnalysis);
+        if (latest.reportFileName) setReportFileName(String(latest.reportFileName));
+        if (latest.reportUploadId) setReportUploadId(String(latest.reportUploadId));
+        if (typeof latest.reportText === 'string') setReportText(latest.reportText);
+
+        if (latest.aiResult) setAiResult(latest.aiResult as AiResult);
+        if (typeof latest.advice === 'string') setLlmAdvice(latest.advice);
+
+        const restoredDate = latest.createdAt?.seconds
+          ? new Date(latest.createdAt.seconds * 1000).toLocaleDateString('en-US', {
+              month: 'short', day: 'numeric', year: 'numeric',
+            })
+          : null;
+        setRestoredAnalysisLabel(restoredDate ? `Restored from ${restoredDate}` : 'Restored from your latest saved analysis');
+        setStage(4);
+      } catch (error) {
+        console.error('Failed to restore saved credit analysis:', error);
+        setHasSavedAnalysis(false);
+        setStage(1);
+      } finally {
+        if (!cancelled) setAnalysisLookupLoading(false);
+      }
+    };
+
+    restoreLatestAnalysis();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   // ── PDF extraction ────────────────────────────────────────────────────────
@@ -291,6 +480,35 @@ export default function CreditBuilderPage() {
         if (user) addPoints(user.uid, 100).catch(console.error);
       }
       if (data.advice) setLlmAdvice(data.advice);
+
+      if (user) {
+        try {
+          await addDoc(collection(db, 'creditAnalysisResults'), {
+            userId: user.uid,
+            goalType: goalType || null,
+            targetScore: targetScore || null,
+            deadlineMonths: deadlineMonths || null,
+            majorApplications: majorApplications || null,
+            financialContext,
+            reportAnalysis: reportAnalysis ?? null,
+            reportFileName: reportFileName ?? null,
+            reportUploadId: reportUploadId ?? null,
+            reportText: reportText.slice(0, 12000),
+            score: data?.result?.credit_summary?.current_score ?? reportAnalysis?.score ?? creditScore ?? null,
+            projectedScore: data?.result?.credit_summary?.projected_score ?? null,
+            scoreBand: data?.result?.credit_summary?.score_band ?? null,
+            riskAlerts: Array.isArray(data?.result?.risk_alerts) ? data.result.risk_alerts : [],
+            aiResult: data?.result ?? null,
+            advice: typeof data?.advice === 'string' ? data.advice : null,
+            createdAt: serverTimestamp(),
+          });
+          setHasSavedAnalysis(true);
+          setRestoredAnalysisLabel('Saved to your profile');
+        } catch (saveError) {
+          console.error('Failed to save credit analysis result:', saveError);
+        }
+      }
+
       setStage(4);
     } catch (err) {
       setLlmError(err instanceof Error ? err.message : 'Could not run analysis. Please try again.');
@@ -329,10 +547,51 @@ export default function CreditBuilderPage() {
     setReportAnalysis(null);
     setReportFileName(null);
     setReportError(null);
+    setActiveReportSectionKey(null);
+    setExpandedReportSections({});
+    setShowAllReportSections(false);
+    setRestoredAnalysisLabel(null);
     setFinancialContext({ occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '', totalCreditLimit: '', savings: '', selfEmployed: false });
   };
 
+  useEffect(() => {
+    if (reportSections.length === 0) {
+      setActiveReportSectionKey(null);
+      return;
+    }
+
+    if (!activeReportSectionKey || !reportSections.some((section) => section.key === activeReportSectionKey)) {
+      setActiveReportSectionKey(reportSections[0].key);
+    }
+
+    setExpandedReportSections((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      return reportSections.reduce<Record<string, boolean>>((acc, section, idx) => {
+        acc[section.key] = idx === 0;
+        return acc;
+      }, {});
+    });
+  }, [reportSections, activeReportSectionKey]);
+
   // ─── Render ──────────────────────────────────────────────────────────────────
+  if (user && analysisLookupLoading) {
+    return (
+      <div className="min-h-screen bg-background py-10">
+        <div className="container mx-auto px-4 max-w-5xl">
+          <div className="frosted-glass rounded-2xl p-8 shadow-xl text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
+            <p className="mt-4 text-secondary font-semibold">Checking your saved credit analysis…</p>
+            <p className="text-xs text-darkwood mt-1">
+              {hasSavedAnalysis === false
+                ? 'No previous analysis found. You can upload your report to generate one.'
+                : 'If found, your latest strategy will load automatically.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background py-10">
       <div className="container mx-auto px-4 max-w-5xl">
@@ -869,13 +1128,18 @@ export default function CreditBuilderPage() {
 
             {/* Dashboard top bar */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-bold px-3 py-1 rounded-full ${modeBadgeColor}`}>{modeLabel}</span>
                 <span className="text-xs text-darkwood hidden md:block">
                   Goal: {GOALS.find(g => g.type === goalType)?.label ?? 'General'} ·
                   Deadline: {deadlineMonths === 'flexible' ? 'Flexible' : `${deadlineMonths} months`} ·
                   Target: {targetScore}
                 </span>
+                {restoredAnalysisLabel && (
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                    {restoredAnalysisLabel}
+                  </span>
+                )}
               </div>
               <button
                 onClick={handleReset}
@@ -1221,18 +1485,153 @@ export default function CreditBuilderPage() {
             {llmAdvice && (
               <div className="frosted-glass rounded-2xl p-7 shadow-xl">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-secondary font-serif">Full AI Analysis</h3>
-                  <button
-                    onClick={runAiAnalysis}
-                    disabled={llmLoading}
-                    className="bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                  >
-                    {llmLoading ? 'Regenerating…' : 'Regenerate'}
-                  </button>
+                  <div>
+                    <h3 className="text-xl font-bold text-secondary font-serif">Full Strategy Analysis</h3>
+                    <p className="text-xs text-darkwood mt-1">Interactive breakdown aligned to your goal and report data.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowAllReportSections((v) => !v)}
+                      className="bg-white/70 hover:bg-white text-secondary text-xs font-semibold px-3 py-1.5 rounded-lg border border-accent/40 transition-all"
+                    >
+                      {showAllReportSections ? 'Hide All Sections' : 'Show All Sections'}
+                    </button>
+                    <button
+                      onClick={runAiAnalysis}
+                      disabled={llmLoading}
+                      className="bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      {llmLoading ? 'Regenerating…' : 'Regenerate'}
+                    </button>
+                  </div>
                 </div>
-                <div className="prose prose-sm max-w-none text-darkwood markdown-output">
-                  <ReactMarkdown>{llmAdvice}</ReactMarkdown>
-                </div>
+
+                {reportSections.length > 0 ? (
+                  <div className="space-y-5">
+                    <div className="bg-white/60 border border-accent/40 rounded-xl p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                        <span className="text-xs font-semibold text-secondary">Report Coverage: {reportSections.length}/10 sections</span>
+                        <span className="text-xs text-darkwood">{reportCoveragePercent}% structured</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(reportCoveragePercent, 100)}%` }}
+                          transition={{ duration: 0.7 }}
+                          className="h-2 rounded-full bg-gradient-to-r from-primary to-secondary"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid lg:grid-cols-12 gap-4">
+                      <div className="lg:col-span-4 space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                        {reportSections.map((section) => (
+                          <button
+                            key={section.key}
+                            onClick={() => setActiveReportSectionKey(section.key)}
+                            className={`w-full text-left rounded-xl border p-3 transition-all ${
+                              activeReportSection?.key === section.key
+                                ? `${getReportSectionTone(section.key)} shadow-sm`
+                                : 'bg-white/60 border-accent/30 hover:border-primary/40 hover:bg-primary/5'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="text-[11px] font-bold uppercase tracking-wide">Section {section.index}</div>
+                                <div className="text-sm font-bold mt-0.5 leading-snug">{section.heading}</div>
+                              </div>
+                              {activeReportSection?.key === section.key && (
+                                <span className="text-[10px] bg-white/70 border border-white rounded-full px-2 py-0.5">Active</span>
+                              )}
+                            </div>
+                            <p className="mt-2 text-xs text-darkwood/80 line-clamp-2">{getSectionPreview(section)}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="lg:col-span-8">
+                        {activeReportSection && (
+                          <div className="bg-white/70 border border-accent/40 rounded-xl p-5">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                              <h4 className="text-lg font-bold text-secondary font-serif">{activeReportSection.heading}</h4>
+                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${getReportSectionTone(activeReportSection.key)}`}>
+                                Focus View
+                              </span>
+                            </div>
+
+                            <div className="prose prose-sm max-w-none text-darkwood markdown-output">
+                              <ReactMarkdown>{activeReportSection.content}</ReactMarkdown>
+                            </div>
+
+                            <div className="mt-5 flex items-center justify-between gap-2">
+                              <button
+                                onClick={() => {
+                                  const idx = reportSections.findIndex((s) => s.key === activeReportSection.key);
+                                  if (idx > 0) setActiveReportSectionKey(reportSections[idx - 1].key);
+                                }}
+                                disabled={reportSections.findIndex((s) => s.key === activeReportSection.key) <= 0}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-accent/40 bg-white hover:bg-primary/5 text-secondary disabled:opacity-40"
+                              >
+                                Previous Section
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const idx = reportSections.findIndex((s) => s.key === activeReportSection.key);
+                                  if (idx < reportSections.length - 1) setActiveReportSectionKey(reportSections[idx + 1].key);
+                                }}
+                                disabled={reportSections.findIndex((s) => s.key === activeReportSection.key) >= reportSections.length - 1}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40"
+                              >
+                                Next Section
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {showAllReportSections && (
+                      <div className="bg-white/50 border border-accent/30 rounded-xl p-4">
+                        <h4 className="text-sm font-bold text-secondary mb-3">All Sections</h4>
+                        <div className="space-y-2">
+                          {reportSections.map((section) => (
+                            <div key={`all-${section.key}`} className="border border-accent/30 rounded-xl overflow-hidden bg-white/70">
+                              <button
+                                onClick={() => setExpandedReportSections((prev) => ({ ...prev, [section.key]: !prev[section.key] }))}
+                                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-primary/5 transition-all"
+                              >
+                                <span className="text-sm font-semibold text-secondary">{section.heading}</span>
+                                {expandedReportSections[section.key] ? (
+                                  <FaChevronUp className="text-xs text-primary" />
+                                ) : (
+                                  <FaChevronDown className="text-xs text-darkwood" />
+                                )}
+                              </button>
+                              <AnimatePresence>
+                                {expandedReportSections[section.key] && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                  >
+                                    <div className="px-4 pb-4 pt-1 prose prose-sm max-w-none text-darkwood markdown-output border-t border-accent/20">
+                                      <ReactMarkdown>{section.content}</ReactMarkdown>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="prose prose-sm max-w-none text-darkwood markdown-output">
+                    <ReactMarkdown>{llmAdvice}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             )}
 

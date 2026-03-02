@@ -13,8 +13,8 @@ type Particle = {
   size: number;
 };
 
-const PARTICLE_COUNT = 18;
-const ORB_COUNT = 5;
+const PARTICLE_COUNT = 10;
+const ORB_COUNT = 3;
 
 export default function SeasonalBackdrop() {
   const { theme } = useSeasonalTheme();

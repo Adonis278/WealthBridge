@@ -1,4 +1,11 @@
 {
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix ./Wealth-Bridge run dev",
+    "build": "npm --prefix ./Wealth-Bridge run build",
+    "start": "npm --prefix ./Wealth-Bridge run start",
+    "lint": "npm --prefix ./Wealth-Bridge run lint"
+  },
   "dependencies": {
     "firebase": "^12.4.0"
   }

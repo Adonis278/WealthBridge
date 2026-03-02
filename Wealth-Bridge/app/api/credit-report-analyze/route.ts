@@ -21,6 +21,15 @@ function getEnv(name: string): string | undefined {
   return process.env[name];
 }
 
+function parseMoney(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const cleaned = value.replace(/[^\d.-]/g, '').trim();
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -42,40 +51,97 @@ export async function POST(request: NextRequest) {
     }
 
     const financialContext = body?.financialContext ?? {};
-    const prompt = `You are a certified credit strategy engine. Analyze the credit report and financial context provided. Return ONLY valid JSON — no explanations, no markdown code blocks, no extra text outside the JSON.
+    const annualIncome = parseMoney(financialContext?.annualIncome);
+    const monthlyIncome = annualIncome && annualIncome > 0 ? annualIncome / 12 : null;
+    const monthlyDebt = parseMoney(financialContext?.monthlyDebt);
+    const declaredTotalCreditLimit = parseMoney(financialContext?.totalCreditLimit);
+    const dtiPercent =
+      monthlyIncome && monthlyIncome > 0 && monthlyDebt != null
+        ? Number(((monthlyDebt / monthlyIncome) * 100).toFixed(1))
+        : null;
 
-Return JSON exactly matching this schema:
+    const prompt = `You are a consumer credit strategy analyst.
+Your job is to generate a personalized, actionable, easy-to-understand credit improvement report.
+
+Core rules:
+- Do NOT give generic advice.
+- Do NOT show abstract scoring percentages without explanation.
+- Do NOT provide guaranteed point increases.
+- Do NOT sound like a textbook.
+- Use dollar amounts and real math whenever possible.
+- Tie every recommendation to the user's goal, income, debt, and account data.
+
+You MUST return ONLY valid JSON, no markdown code fences and no extra text.
+
+Return JSON with this exact shape:
 {
   "credit_summary": {
-    "current_score": <number, use detected score or estimate>,
+    "current_score": <number>,
     "score_band": <"Poor"|"Fair"|"Good"|"Very Good"|"Exceptional">,
-    "projected_score": <number, realistic 6-month projection if user follows plan>,
+    "projected_score": <number>,
     "projection_timeline_months": <number>
   },
   "factor_analysis": {
-    "payment_history": { "current": <0-100>, "ideal": 100, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range> points", "recommendation": "<action>" },
-    "utilization": { "current": <0-100>, "ideal": 30, "impact_level": "High", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
-    "credit_age": { "current": <0-100>, "ideal": 80, "impact_level": "Medium", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
-    "credit_mix": { "current": <0-100>, "ideal": 70, "impact_level": "Low", "estimated_score_gain": "<range> points", "recommendation": "<action>" },
-    "new_credit": { "current": <0-100>, "ideal": 80, "impact_level": "Low", "estimated_score_gain": "<range> points", "recommendation": "<action>" }
+    "payment_history": { "current": <0-100>, "ideal": 100, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range only>", "recommendation": "<specific action>" },
+    "utilization": { "current": <0-100>, "ideal": 30, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range only>", "recommendation": "<specific action>" },
+    "credit_age": { "current": <0-100>, "ideal": 80, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range only>", "recommendation": "<specific action>" },
+    "credit_mix": { "current": <0-100>, "ideal": 70, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range only>", "recommendation": "<specific action>" },
+    "new_credit": { "current": <0-100>, "ideal": 80, "impact_level": <"High"|"Medium"|"Low">, "estimated_score_gain": "<range only>", "recommendation": "<specific action>" }
   },
   "goal_alignment": {
     "readiness_score_percent": <0-100>,
-    "dti_percent": <number or null>,
-    "notes": "<1-2 sentence goal readiness note>"
+    "dti_percent": <number|null>,
+    "notes": "<goal readiness assessment>"
   },
-  "risk_alerts": ["<alert string>", ...],
+  "risk_alerts": ["<specific risk>", "..."],
   "action_plan": [
-    { "phase": "Month 1-2", "steps": ["<step>", ...] },
-    { "phase": "Month 3-4", "steps": ["<step>", ...] },
-    { "phase": "Month 5-6", "steps": ["<step>", ...] }
-  ]
+    { "phase": "Month 1-2", "steps": ["<specific step>", "..."] },
+    { "phase": "Month 3-4", "steps": ["<specific step>", "..."] },
+    { "phase": "Month 5-6", "steps": ["<specific step>", "..."] }
+  ],
+  "strategy_report_markdown": "<markdown report using EXACTLY the 10 required sections below>"
 }
 
-Score: ${score ?? 'Unknown'}
-Goal: ${JSON.stringify(profile, null, 2)}
-Financial Context: ${JSON.stringify(financialContext, null, 2)}
-Report text:
+The markdown report must follow this exact section order and heading style:
+1️⃣ WHY YOUR SCORE IS [Current Score]
+2️⃣ TOP SCORE DRIVERS (RANKED BY IMPACT)
+3️⃣ CREDIT UTILIZATION – SHOW THE MATH
+4️⃣ NEGATIVE ACCOUNTS STRATEGY
+5️⃣ DEBT-TO-INCOME (DTI) ANALYSIS
+6️⃣ GOAL READINESS ANALYSIS
+7️⃣ PRIORITY ACTION PLAN (RANKED)
+8️⃣ SCORE PROJECTION SCENARIOS
+9️⃣ WHAT NOT TO DO
+🔟 SUMMARY
+
+Hard requirements for the markdown report:
+- Consumer-first, specific, motivating, trust-building tone.
+- Use plain English and concrete account details from the report.
+- Include 2-4 most impactful issues in section 1.
+- In section 2, list top 3-5 factors with: What we found / Why this matters / What to fix / Impact Level.
+- In section 3, always show utilization math:
+  total revolving limit, total revolving balance, current utilization %, 30% target balance, dollar paydown needed.
+  If partial paydown examples are possible, show estimated new utilization.
+- In section 4, if collections/charge-offs exist, list each with creditor, amount, status, age, then strategy options (pay-for-delete if applicable, settlement, dispute, or when to leave alone), with risk and timing.
+- In section 5, calculate DTI using monthly income and minimum debt payments; classify as Excellent (<28%), Acceptable (28-36%), Risky (>36%) and tie to user goal.
+- In section 6, goal-specific readiness (home/car/card/rental/business funding/improve score).
+- In section 7, provide only a ranked 3-step plan with timeline.
+- In section 8, provide conditional score ranges only (never guarantees).
+- In section 9, provide 3-5 tailored warnings.
+- In section 10, give current position, realistic 6-month outlook, and best path forward.
+- No guaranteed outcomes. No vague generic filler.
+
+User score input: ${score ?? 'Unknown'}
+Goal profile: ${JSON.stringify(profile, null, 2)}
+Financial context: ${JSON.stringify(financialContext, null, 2)}
+Derived financial math:
+- Annual income: ${annualIncome ?? 'Unknown'}
+- Monthly income: ${monthlyIncome != null ? monthlyIncome.toFixed(2) : 'Unknown'}
+- Monthly debt payments: ${monthlyDebt ?? 'Unknown'}
+- DTI: ${dtiPercent != null ? `${dtiPercent}%` : 'Unknown'}
+- User-declared total revolving limit: ${declaredTotalCreditLimit ?? 'Unknown'}
+
+Credit report text:
 ${text}`;
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -87,11 +153,11 @@ ${text}`;
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'You are a certified credit strategy engine. You only respond with valid JSON. No extra text.' },
+          { role: 'system', content: 'You are a consumer credit strategy analyst. You only respond with valid JSON and follow the required 10-section credit strategy report format exactly.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 1400,
+        max_tokens: 2200,
         response_format: { type: 'json_object' },
       }),
     });
@@ -102,15 +168,20 @@ ${text}`;
     }
 
     const data = await response.json();
-    const advice = data?.choices?.[0]?.message?.content?.trim() ?? '';
+    const rawContent = data?.choices?.[0]?.message?.content?.trim() ?? '';
 
     // Parse JSON result; fall back gracefully
     let result: Record<string, unknown> | null = null;
     try {
-      result = JSON.parse(advice);
+      result = JSON.parse(rawContent);
     } catch {
       result = null;
     }
+
+    const adviceFromResult = typeof result?.strategy_report_markdown === 'string'
+      ? (result.strategy_report_markdown as string)
+      : '';
+    const advice = adviceFromResult || rawContent;
 
     if (reportId && advice) {
       await addDoc(collection(db, 'creditReportAdvice'), {
