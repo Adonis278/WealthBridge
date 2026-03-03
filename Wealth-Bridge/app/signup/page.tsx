@@ -103,13 +103,13 @@ export default function SignUpPage() {
         >
           <div className="text-center mb-8">
             <FaLeaf className="text-6xl text-accent mx-auto mb-4 animate-bounce" />
-            <h1 className="text-4xl font-bold text-white mb-2 font-serif">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2 font-serif">
               Join WealthBridge
             </h1>
             <p className="text-accent">Start your journey to financial freedom</p>
           </div>
 
-          <div className="frosted-glass rounded-2xl p-8 shadow-2xl">
+          <div className="frosted-glass rounded-2xl p-5 sm:p-8 shadow-2xl">
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                 {error}
@@ -122,8 +122,8 @@ export default function SignUpPage() {
                 type="button"
                 onClick={() => { setAuthMethod('email'); setShowOtpInput(false); setError(''); }}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${authMethod === 'email'
-                    ? 'bg-white text-primary shadow'
-                    : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-white text-primary shadow'
+                  : 'text-gray-600 hover:text-gray-800'
                   }`}
               >
                 <FaEnvelope className="inline mr-2" />
@@ -133,8 +133,8 @@ export default function SignUpPage() {
                 type="button"
                 onClick={() => { setAuthMethod('phone'); setError(''); }}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${authMethod === 'phone'
-                    ? 'bg-white text-primary shadow'
-                    : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-white text-primary shadow'
+                  : 'text-gray-600 hover:text-gray-800'
                   }`}
               >
                 <FaPhone className="inline mr-2" />

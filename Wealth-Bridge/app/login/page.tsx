@@ -103,13 +103,13 @@ export default function LoginPage() {
         >
           <div className="text-center mb-8">
             <FaLeaf className="text-6xl text-accent mx-auto mb-4 animate-bounce" />
-            <h1 className="text-4xl font-bold text-white mb-2 font-serif">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2 font-serif">
               Welcome Back
             </h1>
             <p className="text-accent">Continue your wealth journey</p>
           </div>
 
-          <div className="frosted-glass rounded-2xl p-8 shadow-2xl">
+          <div className="frosted-glass rounded-2xl p-5 sm:p-8 shadow-2xl">
             {/* Dev warning: show when Firebase credentials are still placeholder */}
             {process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.includes('your-') && (
               <div className="bg-yellow-50 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">

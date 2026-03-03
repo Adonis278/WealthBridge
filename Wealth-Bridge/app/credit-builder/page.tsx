@@ -441,26 +441,24 @@ export default function CreditBuilderPage() {
               <React.Fragment key={n}>
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                      stage === n
+                    className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${stage === n
                         ? 'bg-primary text-white shadow-lg ring-4 ring-primary/20'
                         : stage > n
-                        ? 'bg-secondary text-white'
-                        : 'bg-accent/40 text-darkwood'
-                    }`}
+                          ? 'bg-secondary text-white'
+                          : 'bg-accent/40 text-darkwood'
+                      }`}
                   >
                     {stage > n ? <FaCheck className="text-xs" /> : n}
                   </div>
                   <span
-                    className={`text-[11px] mt-1 font-semibold ${
-                      stage === n ? 'text-primary' : stage > n ? 'text-secondary' : 'text-darkwood/50'
-                    }`}
+                    className={`text-[11px] mt-1 font-semibold ${stage === n ? 'text-primary' : stage > n ? 'text-secondary' : 'text-darkwood/50'
+                      }`}
                   >
                     {label}
                   </span>
                 </div>
                 {i < 2 && (
-                  <div className={`h-0.5 w-14 md:w-24 mx-1 mb-4 ${stage > n ? 'bg-secondary' : 'bg-accent/40'}`} />
+                  <div className={`h-0.5 w-10 sm:w-14 md:w-24 mx-1 mb-4 ${stage > n ? 'bg-secondary' : 'bg-accent/40'}`} />
                 )}
               </React.Fragment>
             ))}
@@ -473,7 +471,7 @@ export default function CreditBuilderPage() {
         {stage === 1 && (
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             {/* Goal Cards */}
-            <div className="frosted-glass rounded-2xl p-8 shadow-xl">
+            <div className="frosted-glass rounded-2xl p-5 sm:p-8 shadow-xl">
               <h2 className="text-2xl font-bold text-secondary font-serif mb-1">What&apos;s your credit goal?</h2>
               <p className="text-sm text-darkwood mb-6">
                 Your entire strategy will be personalised to your specific objective and urgency.
@@ -483,16 +481,14 @@ export default function CreditBuilderPage() {
                   <button
                     key={type}
                     onClick={() => setGoalType(type)}
-                    className={`group relative rounded-2xl p-5 border-2 text-left transition-all duration-200 overflow-hidden ${
-                      goalType === type
+                    className={`group relative rounded-2xl p-5 border-2 text-left transition-all duration-200 overflow-hidden ${goalType === type
                         ? 'border-primary shadow-lg scale-[1.02]'
                         : 'border-amber/50 hover:border-primary/60 hover:scale-[1.01] bg-white/60'
-                    }`}
+                      }`}
                   >
                     <div
-                      className={`absolute inset-0 bg-gradient-to-br ${gradient} transition-opacity ${
-                        goalType === type ? 'opacity-10' : 'opacity-0 group-hover:opacity-5'
-                      }`}
+                      className={`absolute inset-0 bg-gradient-to-br ${gradient} transition-opacity ${goalType === type ? 'opacity-10' : 'opacity-0 group-hover:opacity-5'
+                        }`}
                     />
                     <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-3 shadow-md`}>
                       <Icon className="text-white text-lg" />
@@ -553,11 +549,10 @@ export default function CreditBuilderPage() {
                   <button
                     key={value}
                     onClick={() => setDeadlineMonths(value)}
-                    className={`rounded-xl border-2 p-4 text-center transition-all ${
-                      deadlineMonths === value
+                    className={`rounded-xl border-2 p-4 text-center transition-all ${deadlineMonths === value
                         ? 'border-primary bg-primary/5 shadow-md'
                         : 'border-amber/40 bg-white/60 hover:border-primary/50'
-                    }`}
+                      }`}
                   >
                     <div className="font-bold text-secondary">{label}</div>
                     <div className="text-[11px] text-darkwood mt-0.5">{sublabel}</div>
@@ -600,16 +595,14 @@ export default function CreditBuilderPage() {
 
             {/* Consent strip */}
             <div
-              className={`frosted-glass rounded-2xl p-5 border-2 transition-all ${
-                agreementAccepted ? 'border-primary/50 bg-primary/5' : 'border-amber'
-              }`}
+              className={`frosted-glass rounded-2xl p-5 border-2 transition-all ${agreementAccepted ? 'border-primary/50 bg-primary/5' : 'border-amber'
+                }`}
             >
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-start space-x-3">
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      agreementAccepted ? 'bg-primary' : 'bg-amber/20'
-                    }`}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${agreementAccepted ? 'bg-primary' : 'bg-amber/20'
+                      }`}
                   >
                     {agreementAccepted
                       ? <FaCheck className="text-white text-xs" />
@@ -984,12 +977,12 @@ export default function CreditBuilderPage() {
                   aiResult?.factor_analysis
                     ? Object.entries(aiResult.factor_analysis)
                     : ([
-                        ['payment_history', { current: 85, ideal: 100, impact_level: 'High', estimated_score_gain: '0 points', recommendation: 'Keep paying on time every month.' }],
-                        ['utilization', { current: 55, ideal: 30, impact_level: 'High', estimated_score_gain: '20-40 points', recommendation: 'Reduce total balances below 30% of your credit limits.' }],
-                        ['credit_age', { current: 60, ideal: 80, impact_level: 'Medium', estimated_score_gain: '5-10 points', recommendation: 'Keep your oldest accounts open and active.' }],
-                        ['credit_mix', { current: 70, ideal: 70, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Your credit mix looks diverse — maintain it.' }],
-                        ['new_credit', { current: 80, ideal: 80, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Limit new credit applications to avoid inquiry stacking.' }],
-                      ] as [string, FactorData][])
+                      ['payment_history', { current: 85, ideal: 100, impact_level: 'High', estimated_score_gain: '0 points', recommendation: 'Keep paying on time every month.' }],
+                      ['utilization', { current: 55, ideal: 30, impact_level: 'High', estimated_score_gain: '20-40 points', recommendation: 'Reduce total balances below 30% of your credit limits.' }],
+                      ['credit_age', { current: 60, ideal: 80, impact_level: 'Medium', estimated_score_gain: '5-10 points', recommendation: 'Keep your oldest accounts open and active.' }],
+                      ['credit_mix', { current: 70, ideal: 70, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Your credit mix looks diverse — maintain it.' }],
+                      ['new_credit', { current: 80, ideal: 80, impact_level: 'Low', estimated_score_gain: '0 points', recommendation: 'Limit new credit applications to avoid inquiry stacking.' }],
+                    ] as [string, FactorData][])
                 ).map(([key, data]: [string, FactorData], idx: number) => (
                   <motion.div
                     key={key}
@@ -1087,17 +1080,15 @@ export default function CreditBuilderPage() {
                       <div>
                         <div className="text-xs text-darkwood mb-1">Debt-to-Income Ratio</div>
                         <span
-                          className={`text-4xl font-black ${
-                            dtiPct >= 43 ? 'text-red-500' : dtiPct >= 36 ? 'text-amber' : 'text-primary'
-                          }`}
+                          className={`text-4xl font-black ${dtiPct >= 43 ? 'text-red-500' : dtiPct >= 36 ? 'text-amber' : 'text-primary'
+                            }`}
                         >
                           {dtiPct}%
                         </span>
                       </div>
                       <span
-                        className={`text-xs font-bold px-2 py-1 rounded-full ${
-                          dtiPct >= 43 ? 'bg-red-100 text-red-700' : dtiPct >= 36 ? 'bg-amber/20 text-darkwood' : 'bg-primary/10 text-primary'
-                        }`}
+                        className={`text-xs font-bold px-2 py-1 rounded-full ${dtiPct >= 43 ? 'bg-red-100 text-red-700' : dtiPct >= 36 ? 'bg-amber/20 text-darkwood' : 'bg-primary/10 text-primary'
+                          }`}
                       >
                         {dtiPct < 28 ? 'Excellent' : dtiPct < 36 ? 'Good' : dtiPct < 43 ? 'Manageable' : 'High Risk'}
                       </span>
@@ -1135,21 +1126,18 @@ export default function CreditBuilderPage() {
                   {aiResult.action_plan.map(({ phase, steps }, idx) => (
                     <div
                       key={phase}
-                      className={`rounded-xl border overflow-hidden ${
-                        idx === 0 ? 'border-primary/40' : idx === 1 ? 'border-amber/50' : 'border-accent/40'
-                      }`}
+                      className={`rounded-xl border overflow-hidden ${idx === 0 ? 'border-primary/40' : idx === 1 ? 'border-amber/50' : 'border-accent/40'
+                        }`}
                     >
                       <button
                         onClick={() => setExpandedPhase(expandedPhase === phase ? null : phase)}
-                        className={`w-full flex items-center justify-between px-5 py-4 text-left transition-all ${
-                          expandedPhase === phase ? 'bg-primary/5' : 'bg-white/60 hover:bg-white/90'
-                        }`}
+                        className={`w-full flex items-center justify-between px-5 py-4 text-left transition-all ${expandedPhase === phase ? 'bg-primary/5' : 'bg-white/60 hover:bg-white/90'
+                          }`}
                       >
                         <div className="flex items-center space-x-3">
                           <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                              idx === 0 ? 'bg-primary text-white' : idx === 1 ? 'bg-amber text-white' : 'bg-accent/30 text-darkwood'
-                            }`}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${idx === 0 ? 'bg-primary text-white' : idx === 1 ? 'bg-amber text-white' : 'bg-accent/30 text-darkwood'
+                              }`}
                           >
                             {idx + 1}
                           </div>

@@ -57,10 +57,7 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
-/* Smooth transitions */
-* {
-  transition: all 0.2s ease-in-out;
-}
+/* Smooth transitions — applied via Tailwind utility classes (transition-all, transition-colors) where needed */
 
 @keyframes winterGlow {
   0% {

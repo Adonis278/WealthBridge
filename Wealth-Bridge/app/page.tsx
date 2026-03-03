@@ -35,7 +35,7 @@ export default function Home() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="container mx-auto px-4 py-20">
-          <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
+          <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -87,7 +87,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="relative"
+              className="relative mb-8 lg:mb-0"
             >
               <div className="rounded-3xl border border-amber bg-white/80 p-6 shadow-2xl backdrop-blur-xl">
                 <div className="flex items-center justify-between">
@@ -120,8 +120,8 @@ export default function Home() {
                   <div className="mt-2 text-lg font-semibold">Lower utilization under 25%</div>
                 </div>
               </div>
-              <div className="absolute -bottom-6 -left-6 bg-white/80 border border-amber rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center space-x-2 text-sm text-secondary">
+              <div className="absolute -bottom-6 -left-6 bg-white/80 border border-amber rounded-2xl p-4 shadow-lg hidden sm:flex">
+                <div className="items-center space-x-2 text-sm text-secondary">
                   <FaCheckCircle className="text-primary" />
                   <span>Report analyzed</span>
                 </div>

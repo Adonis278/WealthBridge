@@ -57,7 +57,7 @@ export default function NavigatorPage() {
         if (statsResult.success && statsResult.data) {
           setPoints(statsResult.data.points || 0);
           setStreak(statsResult.data.streak || 0);
-          
+
           // Set mood based on streak
           if (statsResult.data.streak >= 7) {
             setMood('happy');
@@ -144,7 +144,7 @@ export default function NavigatorPage() {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-      
+
       // Save bot message to Firebase and award points
       try {
         await saveMessage(user.uid, { text: responseText, sender: 'bot' });
@@ -216,183 +216,181 @@ export default function NavigatorPage() {
         )}
 
         {!loading && user && (
-        <div className="grid lg:grid-cols-4 gap-6">
-          {/* Sidebar - Stats & Achievements */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Avatar */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="frosted-glass rounded-2xl p-6 shadow-xl text-center"
-            >
-              <div className="bg-gradient-to-br from-primary to-secondary w-24 h-24 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <MoodIcon className="text-5xl text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-secondary mb-2 font-serif">
-                Navigator
-              </h3>
-              <p className="text-sm text-darkwood">
-                {mood === 'happy' && "I'm so proud of your progress!"}
-                {mood === 'neutral' && "Let's keep moving forward!"}
-                {mood === 'sad' && "Every journey has challenges. Keep going!"}
-              </p>
-            </motion.div>
+          <div className="grid lg:grid-cols-4 gap-6">
+            {/* Sidebar - Stats & Achievements */}
+            <div className="lg:col-span-1 space-y-6">
+              {/* Avatar */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="frosted-glass rounded-2xl p-6 shadow-xl text-center"
+              >
+                <div className="bg-gradient-to-br from-primary to-secondary w-24 h-24 rounded-full mx-auto mb-4 flex items-center justify-center">
+                  <MoodIcon className="text-5xl text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-secondary mb-2 font-serif">
+                  Navigator
+                </h3>
+                <p className="text-sm text-darkwood">
+                  {mood === 'happy' && "I'm so proud of your progress!"}
+                  {mood === 'neutral' && "Let's keep moving forward!"}
+                  {mood === 'sad' && "Every journey has challenges. Keep going!"}
+                </p>
+              </motion.div>
 
-            {/* Streak & Points */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1 }}
-              className="frosted-glass rounded-2xl p-6 shadow-xl"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <FaFire className="text-3xl text-orange-500" />
-                  <div>
-                    <div className="text-2xl font-bold text-secondary">{streak}</div>
-                    <div className="text-xs text-darkwood">Day Streak</div>
+              {/* Streak & Points */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 }}
+                className="frosted-glass rounded-2xl p-6 shadow-xl"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-2">
+                    <FaFire className="text-3xl text-orange-500" />
+                    <div>
+                      <div className="text-2xl font-bold text-secondary">{streak}</div>
+                      <div className="text-xs text-darkwood">Day Streak</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <FaTrophy className="text-3xl text-amber" />
+                    <div>
+                      <div className="text-2xl font-bold text-secondary">{points}</div>
+                      <div className="text-xs text-darkwood">Points</div>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <FaTrophy className="text-3xl text-amber" />
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-primary to-amber h-2 rounded-full"
+                    style={{ width: `${(points % 500) / 5}%` }}
+                  />
+                </div>
+                <p className="text-xs text-center text-darkwood mt-2">
+                  {500 - (points % 500)} points to next level
+                </p>
+              </motion.div>
+
+              {/* Achievements */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className="frosted-glass rounded-2xl p-6 shadow-xl"
+              >
+                <h3 className="text-lg font-bold text-secondary mb-4 font-serif">
+                  Achievements
+                </h3>
+                <div className="space-y-3">
+                  {achievements.map((achievement) => {
+                    const Icon = achievement.icon;
+                    return (
+                      <div
+                        key={achievement.id}
+                        className={`flex items-center space-x-3 p-3 rounded-lg ${achievement.unlocked ? 'bg-amber bg-opacity-20' : 'bg-gray-100'
+                          }`}
+                      >
+                        <Icon className={`text-2xl ${achievement.color}`} />
+                        <span className={`text-sm font-medium ${achievement.unlocked ? 'text-secondary' : 'text-gray-400'}`}>
+                          {achievement.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+
+              {/* Motivational Quote */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="bg-gradient-to-br from-primary to-amber rounded-2xl p-6 shadow-xl text-white text-center"
+              >
+                <p className="text-sm italic">
+                  &quot;{motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)]}&quot;
+                </p>
+              </motion.div>
+            </div>
+
+            {/* Main Chat Area */}
+            <div className="lg:col-span-3">
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="frosted-glass rounded-2xl shadow-xl flex flex-col min-h-[500px] max-h-[80vh]"
+              >
+                {/* Chat Header */}
+                <div className="bg-gradient-to-r from-secondary to-darkwood p-6 rounded-t-2xl flex items-center space-x-3">
+                  <FaRobot className="text-3xl text-accent" />
                   <div>
-                    <div className="text-2xl font-bold text-secondary">{points}</div>
-                    <div className="text-xs text-darkwood">Points</div>
+                    <h3 className="text-xl font-bold text-white font-serif">Wealth Navigator</h3>
+                    <p className="text-sm text-accent">Always here to help</p>
                   </div>
                 </div>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-primary to-amber h-2 rounded-full"
-                  style={{ width: `${(points % 500) / 5}%` }}
-                />
-              </div>
-              <p className="text-xs text-center text-darkwood mt-2">
-                {500 - (points % 500)} points to next level
-              </p>
-            </motion.div>
 
-            {/* Achievements */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-              className="frosted-glass rounded-2xl p-6 shadow-xl"
-            >
-              <h3 className="text-lg font-bold text-secondary mb-4 font-serif">
-                Achievements
-              </h3>
-              <div className="space-y-3">
-                {achievements.map((achievement) => {
-                  const Icon = achievement.icon;
-                  return (
-                    <div
-                      key={achievement.id}
-                      className={`flex items-center space-x-3 p-3 rounded-lg ${
-                        achievement.unlocked ? 'bg-amber bg-opacity-20' : 'bg-gray-100'
-                      }`}
+                {/* Messages */}
+                <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                  {messages.map((message) => (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <Icon className={`text-2xl ${achievement.color}`} />
-                      <span className={`text-sm font-medium ${achievement.unlocked ? 'text-secondary' : 'text-gray-400'}`}>
-                        {achievement.name}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-
-            {/* Motivational Quote */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 }}
-              className="bg-gradient-to-br from-primary to-amber rounded-2xl p-6 shadow-xl text-white text-center"
-            >
-              <p className="text-sm italic">
-                &quot;{motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)]}&quot;
-              </p>
-            </motion.div>
-          </div>
-
-          {/* Main Chat Area */}
-          <div className="lg:col-span-3">
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="frosted-glass rounded-2xl shadow-xl flex flex-col h-[700px]"
-            >
-              {/* Chat Header */}
-              <div className="bg-gradient-to-r from-secondary to-darkwood p-6 rounded-t-2xl flex items-center space-x-3">
-                <FaRobot className="text-3xl text-accent" />
-                <div>
-                  <h3 className="text-xl font-bold text-white font-serif">Wealth Navigator</h3>
-                  <p className="text-sm text-accent">Always here to help</p>
-                </div>
-              </div>
-
-              {/* Messages */}
-              <div className="flex-1 p-6 overflow-y-auto space-y-4">
-                {messages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[70%] p-4 rounded-2xl ${
-                        message.sender === 'user'
-                          ? 'bg-primary text-white'
-                          : 'bg-white text-secondary shadow-md'
-                      }`}
-                    >
-                      <p className="whitespace-pre-line">{message.text}</p>
-                      <p className={`text-xs mt-2 ${message.sender === 'user' ? 'text-accent' : 'text-darkwood'}`}>
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Quick Responses */}
-              <div className="px-6 pb-4">
-                <div className="grid grid-cols-2 gap-2">
-                  {quickResponses.map((response, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleQuickResponse(response)}
-                      className="text-sm bg-white hover:bg-amber hover:text-white text-secondary p-3 rounded-lg transition-all border-2 border-amber"
-                    >
-                      {response}
-                    </button>
+                      <div
+                        className={`max-w-[70%] p-4 rounded-2xl ${message.sender === 'user'
+                            ? 'bg-primary text-white'
+                            : 'bg-white text-secondary shadow-md'
+                          }`}
+                      >
+                        <p className="whitespace-pre-line">{message.text}</p>
+                        <p className={`text-xs mt-2 ${message.sender === 'user' ? 'text-accent' : 'text-darkwood'}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
 
-              {/* Input */}
-              <div className="p-6 border-t border-gray-200">
-                <div className="flex space-x-3">
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything about finances..."
-                    className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-full focus:border-primary focus:outline-none"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    className="bg-primary hover:bg-amber text-white p-3 rounded-full transition-all transform hover:scale-110"
-                  >
-                    <FaPaperPlane className="text-xl" />
-                  </button>
+                {/* Quick Responses */}
+                <div className="px-6 pb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {quickResponses.map((response, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleQuickResponse(response)}
+                        className="text-sm bg-white hover:bg-amber hover:text-white text-secondary p-3 rounded-lg transition-all border-2 border-amber"
+                      >
+                        {response}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+
+                {/* Input */}
+                <div className="p-6 border-t border-gray-200">
+                  <div className="flex space-x-3">
+                    <input
+                      type="text"
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                      placeholder="Ask me anything about finances..."
+                      className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-full focus:border-primary focus:outline-none"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      className="bg-primary hover:bg-amber text-white p-3 rounded-full transition-all transform hover:scale-110"
+                    >
+                      <FaPaperPlane className="text-xl" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           </div>
-        </div>
         )}
       </div>
     </div>
