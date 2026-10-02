@@ -5,27 +5,10 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
 import { FaArrowRight, FaChartLine, FaCloudUploadAlt, FaShieldAlt } from 'react-icons/fa';
-import { useSeasonalTheme } from '@/components/SeasonalThemeProvider';
-
-/**
- * Hero artwork per season. Which one shows is driven by the same
- * SeasonalThemeProvider that already picks the palette — it reads live
- * conditions from Open-Meteo and falls back to the calendar month.
- */
-const HERO_ART = {
-  fall: {
-    src: '/hero-fall.webp',
-    alt: 'A wooden footbridge over a stream running through autumn woodland',
-  },
-  winter: {
-    src: '/hero-winter.webp',
-    alt: 'A wooden footbridge over a stream running through snow-covered woodland',
-  },
-} as const;
+import { useSeasonalArt } from '@/components/SeasonalArt';
 
 export default function Home() {
-  const { theme } = useSeasonalTheme();
-  const art = HERO_ART[theme] ?? HERO_ART.fall;
+  const art = useSeasonalArt();
 
   const highlights = [
     {

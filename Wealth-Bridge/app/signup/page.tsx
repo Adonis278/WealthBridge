@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { safeRedirect } from '@/lib/safeRedirect';
+import SeasonalAuthBackdrop from '@/components/SeasonalArt';
 import { getAuthErrorMessage } from '@/lib/authErrorMessages';
-import { FaLeaf, FaGoogle, FaEnvelope, FaLock, FaUser, FaPhone, FaShieldAlt } from 'react-icons/fa';
+import { FaLeaf, FaGoogle, FaEnvelope, FaLock, FaUser, FaPhone } from 'react-icons/fa';
 
 function SignUpContent() {
   const [email, setEmail] = useState('');
@@ -82,18 +83,19 @@ function SignUpContent() {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-sunset flex items-center justify-center -mt-[88px] pt-[88px] py-12 px-4">
+      <div className="relative min-h-screen bg-gradient-sunset flex items-center justify-center -mt-[88px] pt-[88px] py-12 px-4">
+        <SeasonalAuthBackdrop />
         <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full"
+        className="relative z-10 max-w-md w-full"
       >
         <div className="text-center mb-8">
           <FaLeaf className="text-6xl text-accent mx-auto mb-4 animate-bounce" />
           <h1 className="text-4xl font-bold text-white mb-2 font-serif">
             Join WealthBridge
           </h1>
-          <p className="text-accent">Start your journey to financial freedom</p>
+          <p className="text-white/85">Start your journey to financial freedom</p>
         </div>
 
         <div className="frosted-glass rounded-2xl p-8 shadow-2xl">
@@ -272,12 +274,6 @@ function SignUpContent() {
               Sign In
             </Link>
           </p>
-
-          {/* reCAPTCHA Enterprise Badge */}
-          <div className="mt-4 flex items-center justify-center text-xs text-gray-500">
-            <FaShieldAlt className="mr-1 text-green-600" />
-            <span>Protected by reCAPTCHA Enterprise</span>
-          </div>
         </div>
         </motion.div>
       </div>
