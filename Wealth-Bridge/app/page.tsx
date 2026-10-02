@@ -3,13 +3,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import Image from 'next/image';
 import { FaArrowRight, FaChartLine, FaCloudUploadAlt, FaShieldAlt } from 'react-icons/fa';
-import { useSeasonalArt } from '@/components/SeasonalArt';
+import { SeasonalImage } from '@/components/SeasonalArt';
 
 export default function Home() {
-  const art = useSeasonalArt();
-
   const highlights = [
     {
       title: 'Credit Builder Core',
@@ -44,15 +41,7 @@ export default function Home() {
           className="pointer-events-none select-none absolute inset-y-0 right-0 w-full lg:w-[62%]"
         >
           <div className="hero-art relative h-full w-full">
-            <Image
-              key={art.src}
-              src={art.src}
-              alt=""
-              fill
-              priority
-              sizes="(max-width: 1023px) 100vw, 62vw"
-              className="object-cover object-center"
-            />
+            <SeasonalImage sizes="(max-width: 1023px) 100vw, 62vw" />
           </div>
           {/* Soften the bottom edge into the next section */}
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />

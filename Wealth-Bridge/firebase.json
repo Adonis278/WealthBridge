@@ -8,5 +8,16 @@
   "storage": {
     "rules": "storage.rules"
   },
-  "apphosting": {}
+  "apphosting": {
+    "backendId": "wealthbridge",
+    "rootDir": "/",
+    "ignore": [
+      "node_modules",
+      ".git",
+      ".next",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "**/*.local"
+    ]
+  }
 }
