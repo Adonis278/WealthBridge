@@ -1,17 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import Script from 'next/script';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { executeRecaptcha } from '@/lib/recaptcha';
-import { RECAPTCHA_SITE_KEY } from '@/lib/recaptcha';
+import { safeRedirect } from '@/lib/safeRedirect';
 import { getAuthErrorMessage } from '@/lib/authErrorMessages';
 import { FaLeaf, FaGoogle, FaEnvelope, FaLock, FaPhone, FaShieldAlt } from 'react-icons/fa';
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -22,6 +20,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { signIn, signInWithGoogle, setupRecaptcha, verifyOTP } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = safeRedirect(searchParams.get('redirect'));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +30,9 @@ export default function LoginPage() {
 
     try {
       // Execute reCAPTCHA Enterprise
-      const recaptchaToken = await executeRecaptcha('login');
-      console.log('reCAPTCHA token obtained for login:', recaptchaToken ? 'success' : 'failed');
       
       await signIn(email, password);
-      router.push('/navigator');
+      router.push(redirectTarget);
     } catch (err: unknown) {
       setError(getAuthErrorMessage(err, 'Failed to sign in. Please try again.'));
     } finally {
@@ -50,8 +48,6 @@ export default function LoginPage() {
     try {
       if (!showOtpInput) {
         // Execute reCAPTCHA Enterprise for phone auth
-        const recaptchaToken = await executeRecaptcha('phone_login');
-        console.log('reCAPTCHA token obtained for phone login:', recaptchaToken ? 'success' : 'failed');
         
         // Format phone number with country code if not present
         const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber}`;
@@ -59,7 +55,7 @@ export default function LoginPage() {
         setShowOtpInput(true);
       } else {
         await verifyOTP(otp);
-        router.push('/navigator');
+        router.push(redirectTarget);
       }
     } catch (err: unknown) {
       setError(getAuthErrorMessage(err, 'Failed to sign in with phone. Please try again.'));
@@ -74,11 +70,9 @@ export default function LoginPage() {
 
     try {
       // Execute reCAPTCHA Enterprise for Google sign-in
-      const recaptchaToken = await executeRecaptcha('google_login');
-      console.log('reCAPTCHA token obtained for Google login:', recaptchaToken ? 'success' : 'failed');
       
       await signInWithGoogle();
-      router.push('/navigator');
+      router.push(redirectTarget);
     } catch (err: unknown) {
       setError(getAuthErrorMessage(err, 'Failed to sign in with Google. Please try again.'));
     } finally {
@@ -88,12 +82,6 @@ export default function LoginPage() {
 
   return (
     <>
-      {RECAPTCHA_SITE_KEY && (
-        <Script
-          src={`https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_SITE_KEY}`}
-          strategy="afterInteractive"
-        />
-      )}
       <div className="min-h-screen bg-gradient-sunset flex items-center justify-center py-12 px-4">
         <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -278,5 +266,13 @@ export default function LoginPage() {
         </motion.div>
       </div>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }

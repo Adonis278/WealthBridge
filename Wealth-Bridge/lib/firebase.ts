@@ -1,8 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getAnalytics, isSupported } from 'firebase/analytics';
+import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,30 +23,54 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
 
-// Enable offline persistence (browser only) — prevents "client is offline" errors on first load
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Multiple tabs open — persistence only works in one tab at a time
-      console.warn('Firestore persistence unavailable: multiple tabs open.');
-    } else if (err.code === 'unimplemented') {
-      // Browser doesn't support IndexedDB
-      console.warn('Firestore persistence not supported in this browser.');
-    }
+// Offline persistence is configured up front via `localCache`. The old
+// enableIndexedDbPersistence() call is deprecated, and the multi-tab manager
+// removes the "only one tab at a time" limitation it had.
+let db: Firestore;
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+    ...(typeof window !== 'undefined'
+      ? {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        }
+      : {}),
   });
+} catch {
+  // Already initialized (fast refresh), or IndexedDB is unavailable.
+  db = getFirestore(app);
 }
 
-// Initialize Analytics only on client side
-let analytics;
+const storage = getStorage(app);
+
+/**
+ * Analytics is deferred until the browser is idle.
+ *
+ * Loading it eagerly cost four blocking-ish round trips during page load
+ * (firebase.googleapis.com config, firebaseinstallations, gtag.js, and the
+ * first GA collect) and none of it is needed to render or sign in.
+ */
+let analytics: Analytics | undefined;
+
 if (typeof window !== 'undefined') {
-  isSupported().then((supported) => {
-    if (supported) {
-      analytics = getAnalytics(app);
-    }
-  });
+  const start = () => {
+    isSupported()
+      .then((supported) => {
+        if (supported) analytics = getAnalytics(app);
+      })
+      .catch(() => undefined);
+  };
+
+  if ('requestIdleCallback' in window) {
+    (window as Window & {
+      requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+    }).requestIdleCallback(start, { timeout: 5000 });
+  } else {
+    setTimeout(start, 3000);
+  }
 }
 
 export { app, auth, db, storage, analytics };
