@@ -5,7 +5,7 @@ import {
   serverTimestamp,
   arrayUnion
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firestore';
 import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 // Owned by the user via the document path — see firestore.rules.

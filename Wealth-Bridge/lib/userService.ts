@@ -9,7 +9,8 @@ import {
   uploadBytes,
   getDownloadURL
 } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firestore';
+import { storage } from '@/lib/storage';
 import { describeFirestoreError } from '@/lib/firestoreErrors';
 import { USER_SCHEMA_VERSION } from '@/lib/schema';
 

@@ -14,7 +14,8 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firestore';
+import { storage } from '@/lib/storage';
 import { SESSION_SCHEMA_VERSION } from '@/lib/schema';
 
 export type SessionStatus = 'draft' | 'submitted' | 'analyzed' | 'analysis_error';

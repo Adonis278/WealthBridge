@@ -1,1 +1,3 @@
-export { app, auth, db, storage, analytics } from '@/lib/firebase';
+export { app, auth } from '@/lib/firebase';
+export { db } from '@/lib/firestore';
+export { storage } from '@/lib/storage';

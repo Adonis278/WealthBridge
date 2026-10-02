@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
+import { db } from '@/lib/firestore';
 
 // Local diagnostics only. This page echoes project configuration, so it is not
 // served in a production build.

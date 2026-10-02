@@ -16,9 +16,22 @@ import {
   setPersistence,
   browserSessionPersistence,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { USER_SCHEMA_VERSION } from '@/lib/schema';
+
+/**
+ * Firestore is loaded on demand rather than imported at the top of this file.
+ * AuthProvider lives in the root layout, so a static import here would put
+ * ~249KB of Firestore on every page — including ones that never read data,
+ * like /terms and /login.
+ */
+async function loadFirestore() {
+  const [fs, { db }] = await Promise.all([
+    import('firebase/firestore'),
+    import('@/lib/firestore'),
+  ]);
+  return { ...fs, db };
+}
 
 declare global {
   interface Window {
@@ -65,6 +78,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const ensureUserProfile = async (activeUser: User) => {
     try {
+      const { doc, getDoc, setDoc, updateDoc, serverTimestamp, db } = await loadFirestore();
+
       const userRef = doc(db, 'users', activeUser.uid);
       const snapshot = await getDoc(userRef);
 

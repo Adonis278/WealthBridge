@@ -7,7 +7,7 @@ import {
   collection,
   serverTimestamp
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firestore';
 import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 export interface MentorSession {

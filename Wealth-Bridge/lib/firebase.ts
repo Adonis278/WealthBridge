@@ -1,15 +1,17 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import {
-  getFirestore,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  type Firestore,
-} from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
-import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
+/**
+ * Firebase app + auth ONLY.
+ *
+ * Firestore, Storage and Analytics are deliberately NOT imported here. This
+ * module is pulled in by AuthProvider, which lives in the root layout, so
+ * anything imported here ships on every single page — including static ones
+ * like /terms. Firestore alone is ~249KB of that.
+ *
+ * Import `db` from '@/lib/firestore' and `storage` from '@/lib/storage'
+ * instead; those only load for the routes that actually use them.
+ */
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -20,46 +22,19 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
-// Offline persistence is configured up front via `localCache`. The old
-// enableIndexedDbPersistence() call is deprecated, and the multi-tab manager
-// removes the "only one tab at a time" limitation it had.
-let db: Firestore;
-try {
-  db = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-    ...(typeof window !== 'undefined'
-      ? {
-          localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager(),
-          }),
-        }
-      : {}),
-  });
-} catch {
-  // Already initialized (fast refresh), or IndexedDB is unavailable.
-  db = getFirestore(app);
-}
-
-const storage = getStorage(app);
-
 /**
- * Analytics is deferred until the browser is idle.
- *
- * Loading it eagerly cost four blocking-ish round trips during page load
- * (firebase.googleapis.com config, firebaseinstallations, gtag.js, and the
- * first GA collect) and none of it is needed to render or sign in.
+ * Analytics is loaded dynamically once the browser is idle. Importing it
+ * statically would put it in the eager bundle even though the call is
+ * deferred, and it makes four external round trips that nothing waits on.
  */
-let analytics: Analytics | undefined;
-
 if (typeof window !== 'undefined') {
   const start = () => {
-    isSupported()
-      .then((supported) => {
-        if (supported) analytics = getAnalytics(app);
+    import('firebase/analytics')
+      .then(async ({ getAnalytics, isSupported }) => {
+        if (await isSupported()) getAnalytics(app);
       })
       .catch(() => undefined);
   };
@@ -73,4 +48,4 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export { app, auth, db, storage, analytics };
+export { app, auth };
