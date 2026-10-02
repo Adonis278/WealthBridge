@@ -3,10 +3,16 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db } from '@/lib/firebase';
 
+// Local diagnostics only. This page echoes project configuration, so it is not
+// served in a production build.
+const IS_DEV = process.env.NODE_ENV !== 'production';
+
 export default function TestFirebasePage() {
   const [status, setStatus] = useState<any>({});
 
   useEffect(() => {
+    if (!IS_DEV) return;
+
     const checkFirebase = async () => {
       const checks: any = {
         authInitialized: false,
@@ -47,6 +53,19 @@ export default function TestFirebasePage() {
 
     checkFirebase();
   }, []);
+
+  if (!IS_DEV) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="frosted-glass rounded-2xl p-8 shadow-xl text-center max-w-md">
+          <h1 className="text-2xl font-bold text-secondary font-serif mb-2">Not available</h1>
+          <p className="text-sm text-darkwood">
+            This diagnostics page only runs in local development.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">

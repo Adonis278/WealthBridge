@@ -31,6 +31,10 @@ export default function InvestingPage() {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
 
+  // Group thousands so balances stay readable at a glance.
+  const fmt = (value: number) =>
+    value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const stocks: Stock[] = [
     { id: '1', name: 'Tech Growth Fund', symbol: 'TGF', price: 125.50, change: 3.25, changePercent: 2.66 },
     { id: '2', name: 'Green Energy ETF', symbol: 'GEE', price: 78.90, change: -1.20, changePercent: -1.50 },
@@ -256,7 +260,7 @@ export default function InvestingPage() {
               <span className="text-sm text-darkwood">Leaf Balance</span>
             </div>
             <div className="text-3xl font-bold text-secondary">
-              {balance.toFixed(2)}
+              {fmt(balance)}
             </div>
           </motion.div>
 
@@ -271,7 +275,7 @@ export default function InvestingPage() {
               <span className="text-sm text-darkwood">Portfolio Value</span>
             </div>
             <div className="text-3xl font-bold text-secondary">
-              {calculatePortfolioValue().toFixed(2)}
+              {fmt(calculatePortfolioValue())}
             </div>
           </motion.div>
 
@@ -286,7 +290,7 @@ export default function InvestingPage() {
               <span className="text-sm text-darkwood">Total Value</span>
             </div>
             <div className="text-3xl font-bold text-secondary">
-              {totalValue.toFixed(2)}
+              {fmt(totalValue)}
             </div>
           </motion.div>
 
@@ -305,7 +309,7 @@ export default function InvestingPage() {
               <span className="text-sm text-darkwood">Gain/Loss</span>
             </div>
             <div className={`text-3xl font-bold ${gainLoss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {gainLoss >= 0 ? '+' : ''}{gainLoss.toFixed(2)}
+              {gainLoss >= 0 ? '+' : ''}{fmt(gainLoss)}
             </div>
           </motion.div>
         </div>
@@ -336,7 +340,7 @@ export default function InvestingPage() {
                       <div className="text-right">
                         <div className="font-bold text-xl text-secondary">
                           <FaLeaf className="inline text-primary mr-1" />
-                          {stock.price.toFixed(2)}
+                          {fmt(stock.price)}
                         </div>
                         <div className={`text-sm flex items-center justify-end space-x-1 ${stock.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                           {stock.change >= 0 ? <FaArrowUp /> : <FaArrowDown />}
@@ -387,7 +391,7 @@ export default function InvestingPage() {
                           <div className="text-right">
                             <div className="font-bold text-secondary">
                               <FaLeaf className="inline text-primary mr-1" />
-                              {currentValue.toFixed(2)}
+                              {fmt(currentValue)}
                             </div>
                             <div className={`text-xs ${gainLossAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                               {gainLossAmount >= 0 ? '+' : ''}{gainLossPercent.toFixed(2)}%
@@ -432,7 +436,7 @@ export default function InvestingPage() {
                 <div className="text-lg text-darkwood mb-2">{selectedStock.name}</div>
                 <div className="text-3xl font-bold text-primary">
                   <FaLeaf className="inline mr-2" />
-                  {selectedStock.price.toFixed(2)}
+                  {fmt(selectedStock.price)}
                 </div>
               </div>
 
@@ -448,7 +452,7 @@ export default function InvestingPage() {
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
                 />
                 <div className="text-sm text-darkwood mt-2">
-                  Total: <FaLeaf className="inline text-primary" /> {(selectedStock.price * quantity).toFixed(2)}
+                  Total: <FaLeaf className="inline text-primary" /> {fmt(selectedStock.price * quantity)}
                 </div>
               </div>
 

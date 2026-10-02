@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaUsers, FaStar, FaCalendarAlt, FaFilter, FaLinkedin, FaEnvelope } from 'react-icons/fa';
+import { FaUsers, FaStar, FaCalendarAlt, FaFilter, FaLinkedin, FaEnvelope, FaInfoCircle } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import { bookSession, getUserSessions } from '@/lib/mentorshipService';
 import { addPoints } from '@/lib/gamificationService';
@@ -91,72 +91,65 @@ export default function MentorshipPage() {
     }
   };
 
+  // PREVIEW DATA — these are example specialisms, not real people. No mentor has
+  // been onboarded yet, so nothing here asserts a name, a rating or a client
+  // outcome. Replace with records from the `mentors` collection once real
+  // mentors are signed up.
   const mentors: Mentor[] = [
     {
       id: 1,
-      name: 'Sarah Johnson',
-      title: 'Credit Score Specialist',
+      name: 'Credit Building Specialist',
+      title: 'Coming soon',
       expertise: ['Credit Building', 'Debt Management'],
-      rating: 4.9,
-      sessions: 150,
-      availability: 'Mon-Fri, 9am-5pm',
-      bio: 'Helped over 500 clients improve their credit scores by an average of 100 points.',
-      image: '👩‍💼',
+      rating: 0,
+      sessions: 0,
+      availability: 'Joining soon',
+      bio: 'Will cover utilization strategy, collections and dispute basics, and rebuilding after a setback.',
+      image: '💳',
     },
     {
       id: 2,
-      name: 'Michael Chen',
-      title: 'Investment Strategist',
+      name: 'Investing Coach',
+      title: 'Coming soon',
       expertise: ['Investing', 'Portfolio Management'],
-      rating: 4.8,
-      sessions: 200,
-      availability: 'Tue-Sat, 10am-6pm',
-      bio: '15 years of experience in wealth management and helping beginners start investing.',
-      image: '👨‍💼',
+      rating: 0,
+      sessions: 0,
+      availability: 'Joining soon',
+      bio: 'Will cover getting started with index funds, risk tolerance and long-term allocation.',
+      image: '📈',
     },
     {
       id: 3,
-      name: 'Aisha Williams',
-      title: 'Financial Planning Expert',
+      name: 'Budgeting Guide',
+      title: 'Coming soon',
       expertise: ['Budgeting', 'Savings Strategy'],
-      rating: 5.0,
-      sessions: 180,
-      availability: 'Mon-Wed, 1pm-8pm',
-      bio: 'Passionate about helping families achieve financial stability through smart budgeting.',
-      image: '👩‍🎓',
+      rating: 0,
+      sessions: 0,
+      availability: 'Joining soon',
+      bio: 'Will cover building a first budget, emergency funds and steady saving habits.',
+      image: '📝',
     },
     {
       id: 4,
-      name: 'David Martinez',
-      title: 'Real Estate Investor',
+      name: 'Real Estate Mentor',
+      title: 'Coming soon',
       expertise: ['Real Estate', 'Investing'],
-      rating: 4.7,
-      sessions: 95,
-      availability: 'Thu-Sat, 2pm-7pm',
-      bio: 'Built a portfolio of 20+ properties. Teaching others to invest in real estate.',
-      image: '👨‍🏫',
+      rating: 0,
+      sessions: 0,
+      availability: 'Joining soon',
+      bio: 'Will cover mortgage readiness, what lenders look for and first-property planning.',
+      image: '🏠',
     },
     {
       id: 5,
-      name: 'Emily Thompson',
-      title: 'Small Business Coach',
+      name: 'Small Business Coach',
+      title: 'Coming soon',
       expertise: ['Entrepreneurship', 'Business Finance'],
-      rating: 4.9,
-      sessions: 120,
-      availability: 'Mon-Fri, 11am-4pm',
-      bio: 'Helped 50+ entrepreneurs launch and scale their businesses successfully.',
-      image: '👩‍💻',
-    },
-    {
-      id: 6,
-      name: 'James Robinson',
-      title: 'Retirement Planning Advisor',
-      expertise: ['Investing', 'Retirement Planning'],
-      rating: 4.8,
-      sessions: 140,
-      availability: 'Tue-Thu, 9am-3pm',
-      bio: 'Specializing in helping young professionals plan for a comfortable retirement.',
-      image: '👨‍⚕️',
+      rating: 0,
+      sessions: 0,
+      availability: 'Joining soon',
+      bio: 'Will cover separating personal and business credit, and funding options for new businesses.',
+      image: '💼',
     },
   ];
 
@@ -177,8 +170,17 @@ export default function MentorshipPage() {
             Mentorship Hub
           </h1>
           <p className="text-xl text-darkwood">
-            Connect with experienced financial mentors who understand your journey
+            One-to-one guidance on credit, investing and budgeting
           </p>
+
+          <div className="mt-6 inline-flex items-start gap-3 text-left bg-amber/15 border border-amber/50 rounded-xl px-5 py-3 max-w-2xl">
+            <FaInfoCircle className="text-amber mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-darkwood">
+              <strong className="text-secondary">Preview.</strong> The profiles below show the
+              specialisms we&apos;re onboarding. No mentors are bookable yet &mdash; register your
+              interest and we&apos;ll let you know the moment sessions open.
+            </p>
+          </div>
         </motion.div>
 
         {/* Filters */}
@@ -230,15 +232,23 @@ export default function MentorshipPage() {
                 <p className="text-sm text-darkwood">{mentor.title}</p>
               </div>
 
-              {/* Rating & Sessions */}
+              {/* Rating & Sessions — hidden until a mentor has a real history */}
               <div className="flex justify-center items-center space-x-6 mb-4">
-                <div className="flex items-center space-x-1">
-                  <FaStar className="text-amber" />
-                  <span className="font-bold text-secondary">{mentor.rating}</span>
-                </div>
-                <div className="text-sm text-darkwood">
-                  {mentor.sessions} sessions
-                </div>
+                {mentor.sessions > 0 ? (
+                  <>
+                    <div className="flex items-center space-x-1">
+                      <FaStar className="text-amber" />
+                      <span className="font-bold text-secondary">{mentor.rating.toFixed(1)}</span>
+                    </div>
+                    <div className="text-sm text-darkwood">
+                      {mentor.sessions} sessions
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber bg-amber/15 border border-amber/40 rounded-full px-3 py-1">
+                    Not yet available
+                  </span>
+                )}
               </div>
 
               {/* Expertise Tags */}
@@ -264,9 +274,12 @@ export default function MentorshipPage() {
                 <span>{mentor.availability}</span>
               </div>
 
-              {/* CTA Button */}
-              <button className="w-full bg-primary hover:bg-amber text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105">
-                Schedule Session
+              {/* CTA Button — booking stays disabled until a mentor is live */}
+              <button
+                disabled={mentor.sessions === 0}
+                className="w-full bg-primary hover:bg-amber text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105 disabled:bg-darkwood/25 disabled:text-darkwood disabled:cursor-not-allowed disabled:transform-none disabled:hover:bg-darkwood/25"
+              >
+                {mentor.sessions === 0 ? 'Booking opens soon' : 'Schedule Session'}
               </button>
             </motion.div>
           ))}
@@ -311,12 +324,16 @@ export default function MentorshipPage() {
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-4 bg-amber bg-opacity-10 rounded-lg">
                   <FaStar className="text-3xl text-amber mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-secondary">{selectedMentor.rating}</div>
+                  <div className="text-2xl font-bold text-secondary">
+                    {selectedMentor.sessions > 0 ? selectedMentor.rating.toFixed(1) : '—'}
+                  </div>
                   <div className="text-sm text-darkwood">Rating</div>
                 </div>
                 <div className="text-center p-4 bg-primary bg-opacity-10 rounded-lg">
                   <FaUsers className="text-3xl text-primary mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-secondary">{selectedMentor.sessions}</div>
+                  <div className="text-2xl font-bold text-secondary">
+                    {selectedMentor.sessions > 0 ? selectedMentor.sessions : '—'}
+                  </div>
                   <div className="text-sm text-darkwood">Sessions</div>
                 </div>
                 <div className="text-center p-4 bg-secondary bg-opacity-10 rounded-lg">

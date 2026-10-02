@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FaTrophy, FaMedal, FaCrown, FaLeaf, FaFire, FaStar, FaChartLine } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserStats, getLeaderboard } from '@/lib/gamificationService';
+import { getUserStats } from '@/lib/gamificationService';
 
 interface Achievement {
   id: number;
@@ -16,29 +16,22 @@ interface Achievement {
   category: string;
 }
 
-interface LeaderboardUser {
-  rank: number;
-  name: string;
-  points: number;
-  avatar: string;
-  achievements: number;
-}
-
 export default function AchievementsPage() {
   const { user } = useAuth();
-  const [userPoints, setUserPoints] = useState(450);
-  const [userLevel, setUserLevel] = useState(5);
-  const [treeGrowth, setTreeGrowth] = useState(65); // Percentage of tree growth
+  const [userPoints, setUserPoints] = useState(0);
+  const [userLevel, setUserLevel] = useState(1);
+  const [treeGrowth, setTreeGrowth] = useState(0); // Percentage of tree growth
   const [loading, setLoading] = useState(true);
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
+  const [unlockedIds, setUnlockedIds] = useState<number[]>([]);
 
-  const achievements: Achievement[] = [
+  // Catalog of achievements. `unlocked` is derived from the user's own record
+  // below — never hardcoded.
+  const achievementCatalog: Omit<Achievement, 'unlocked'>[] = [
     {
       id: 1,
       name: 'First Steps',
       description: 'Complete your first financial education module',
       icon: FaStar,
-      unlocked: true,
       points: 50,
       category: 'Education',
     },
@@ -47,7 +40,6 @@ export default function AchievementsPage() {
       name: '7-Day Streak',
       description: 'Log in for 7 consecutive days',
       icon: FaFire,
-      unlocked: true,
       points: 100,
       category: 'Engagement',
     },
@@ -56,7 +48,6 @@ export default function AchievementsPage() {
       name: 'Credit Master',
       description: 'Improve your credit score by 50 points',
       icon: FaMedal,
-      unlocked: true,
       points: 150,
       category: 'Credit',
     },
@@ -65,7 +56,6 @@ export default function AchievementsPage() {
       name: 'First Investment',
       description: 'Make your first investment in the simulator',
       icon: FaChartLine,
-      unlocked: true,
       points: 100,
       category: 'Investing',
     },
@@ -74,7 +64,6 @@ export default function AchievementsPage() {
       name: 'Portfolio Builder',
       description: 'Build a portfolio with 5+ different investments',
       icon: FaTrophy,
-      unlocked: false,
       points: 200,
       category: 'Investing',
     },
@@ -83,7 +72,6 @@ export default function AchievementsPage() {
       name: 'Mentor Connection',
       description: 'Schedule your first mentorship session',
       icon: FaMedal,
-      unlocked: false,
       points: 150,
       category: 'Mentorship',
     },
@@ -92,7 +80,6 @@ export default function AchievementsPage() {
       name: 'Knowledge Seeker',
       description: 'Complete all education modules',
       icon: FaCrown,
-      unlocked: false,
       points: 300,
       category: 'Education',
     },
@@ -101,7 +88,6 @@ export default function AchievementsPage() {
       name: '30-Day Streak',
       description: 'Log in for 30 consecutive days',
       icon: FaFire,
-      unlocked: false,
       points: 250,
       category: 'Engagement',
     },
@@ -123,19 +109,9 @@ export default function AchievementsPage() {
           setUserPoints(statsResult.data.points || 0);
           setUserLevel(statsResult.data.level || 1);
           setTreeGrowth(statsResult.data.treeGrowth || 0);
-        }
-
-        // Load leaderboard
-        const leaderboardResult = await getLeaderboard(10);
-        if (leaderboardResult.success && leaderboardResult.data) {
-          const formattedLeaderboard: LeaderboardUser[] = leaderboardResult.data.map((entry, index) => ({
-            rank: entry.rank,
-            name: entry.name,
-            points: entry.points,
-            avatar: index < 3 ? ['🥇', '🥈', '🥉'][index] : '👤',
-            achievements: entry.achievements
-          }));
-          setLeaderboardData(formattedLeaderboard);
+          setUnlockedIds(
+            (statsResult.data.achievements ?? []).map((item) => item.id)
+          );
         }
       } catch (error) {
         console.error('Error loading achievements data:', error);
@@ -147,19 +123,14 @@ export default function AchievementsPage() {
     loadData();
   }, [user]);
 
-  const leaderboard: LeaderboardUser[] = leaderboardData.length > 0 ? leaderboardData : [
-    { rank: 1, name: 'Alex Rivera', points: 1850, avatar: '🥇', achievements: 12 },
-    { rank: 2, name: 'Jordan Kim', points: 1620, avatar: '🥈', achievements: 11 },
-    { rank: 3, name: 'Taylor Brooks', points: 1450, avatar: '🥉', achievements: 10 },
-    { rank: 4, name: 'Morgan Lee', points: 1200, avatar: '👤', achievements: 9 },
-    { rank: 5, name: 'You', points: userPoints, avatar: '😊', achievements: 4 },
-    { rank: 6, name: 'Casey Jones', points: 380, avatar: '👤', achievements: 6 },
-    { rank: 7, name: 'Jamie Smith', points: 320, avatar: '👤', achievements: 5 },
-    { rank: 8, name: 'Riley Chen', points: 280, avatar: '👤', achievements: 4 },
-  ];
+  const achievements: Achievement[] = achievementCatalog.map((item) => ({
+    ...item,
+    unlocked: unlockedIds.includes(item.id),
+  }));
 
   const unlockedAchievements = achievements.filter((a) => a.unlocked);
   const lockedAchievements = achievements.filter((a) => !a.unlocked);
+  const pointsFromAchievements = unlockedAchievements.reduce((sum, a) => sum + a.points, 0);
 
   const getLevelProgress = () => {
     const pointsForNextLevel = userLevel * 100;
@@ -176,7 +147,7 @@ export default function AchievementsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-5xl font-bold text-secondary mb-4 font-serif">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-secondary mb-4 font-serif">
             Achievements & Progress
           </h1>
           <p className="text-xl text-darkwood">
@@ -193,7 +164,7 @@ export default function AchievementsPage() {
           >
             <FaTrophy className="text-6xl text-amber mx-auto mb-4" />
             <p className="text-darkwood mb-4">
-              Please log in to track your achievements and see the leaderboard!
+              Log in to track your achievements and watch your progress grow.
             </p>
             <a
               href="/login"
@@ -395,42 +366,41 @@ export default function AchievementsPage() {
             >
               <h3 className="text-2xl font-bold text-secondary mb-6 font-serif flex items-center space-x-2">
                 <FaCrown className="text-amber" />
-                <span>Leaderboard</span>
+                <span>Your Standing</span>
               </h3>
-              <div className="space-y-3">
-                {leaderboard.map((user, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center justify-between p-4 rounded-lg transition-all ${
-                      user.name === 'You'
-                        ? 'bg-gradient-to-r from-primary to-amber text-white shadow-lg'
-                        : index < 3
-                        ? 'bg-amber bg-opacity-20'
-                        : 'bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl">{user.avatar}</div>
-                      <div>
-                        <div className={`font-bold ${user.name === 'You' ? 'text-white' : 'text-secondary'}`}>
-                          {user.name}
-                        </div>
-                        <div className={`text-xs ${user.name === 'You' ? 'text-accent' : 'text-darkwood'}`}>
-                          {user.achievements} achievements
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${user.name === 'You' ? 'text-white' : 'text-primary'}`}>
-                        #{user.rank}
-                      </div>
-                      <div className={`text-sm ${user.name === 'You' ? 'text-accent' : 'text-darkwood'}`}>
-                        {user.points} pts
-                      </div>
-                    </div>
+
+              <div className="bg-gradient-to-r from-primary to-amber text-white rounded-xl p-5 shadow-lg mb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-white/80 font-semibold">Level</div>
+                    <div className="text-4xl font-black leading-none mt-1">{userLevel}</div>
                   </div>
-                ))}
+                  <div className="text-right">
+                    <div className="text-xs uppercase tracking-wide text-white/80 font-semibold">Total points</div>
+                    <div className="text-4xl font-black leading-none mt-1 tabular-nums">{userPoints}</div>
+                  </div>
+                </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white/70 border border-accent/40 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-black text-primary tabular-nums">
+                    {unlockedAchievements.length}
+                  </div>
+                  <div className="text-xs text-darkwood mt-0.5">Unlocked</div>
+                </div>
+                <div className="bg-white/70 border border-accent/40 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-black text-secondary tabular-nums">
+                    {pointsFromAchievements}
+                  </div>
+                  <div className="text-xs text-darkwood mt-0.5">Badge points</div>
+                </div>
+              </div>
+
+              <p className="text-xs text-darkwood/80 mt-4 leading-relaxed">
+                Community rankings are coming once more members join. Your points and
+                badges are already being tracked.
+              </p>
             </motion.div>
           </div>
         </div>

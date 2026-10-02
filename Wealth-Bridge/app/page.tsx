@@ -19,7 +19,7 @@ export default function Home() {
     },
     {
       title: 'Trust-First Design',
-      description: 'Your report stays in your browser until you choose to generate advice.',
+      description: 'Your report is encrypted, stored privately to your account, and never shared.',
       icon: FaShieldAlt,
     },
   ];
@@ -45,7 +45,7 @@ export default function Home() {
                 <FaSnowflake className="text-primary" />
                 <span>Winter release focused on Credit Builder</span>
               </div>
-              <h1 className="mt-6 text-4xl md:text-6xl font-semibold text-secondary leading-tight font-serif">
+              <h1 className="mt-6 text-3xl sm:text-4xl md:text-6xl font-semibold text-secondary leading-tight font-serif">
                 Credit clarity, without the heavy lift.
               </h1>
               <p className="mt-5 text-lg md:text-xl text-darkwood max-w-2xl">
@@ -77,8 +77,8 @@ export default function Home() {
                   <div>Key credit factors</div>
                 </div>
                 <div className="bg-white/70 rounded-2xl p-4 border border-amber">
-                  <div className="text-2xl font-semibold text-secondary">Local-first</div>
-                  <div>Report stays private</div>
+                  <div className="text-2xl font-semibold text-secondary">Private</div>
+                  <div>Visible only to you</div>
                 </div>
               </div>
             </motion.div>
@@ -89,7 +89,7 @@ export default function Home() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="relative"
             >
-              <div className="rounded-3xl border border-amber bg-white/80 p-6 shadow-2xl backdrop-blur-xl">
+              <div className="rounded-3xl border border-amber bg-white/80 p-6 shadow-2xl backdrop-blur-xl relative">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-darkwood">Credit Builder</p>
@@ -120,7 +120,7 @@ export default function Home() {
                   <div className="mt-2 text-lg font-semibold">Lower utilization under 25%</div>
                 </div>
               </div>
-              <div className="absolute -bottom-6 -left-6 bg-white/80 border border-amber rounded-2xl p-4 shadow-lg">
+              <div className="hidden sm:block absolute -bottom-6 -left-6 bg-white/80 border border-amber rounded-2xl p-4 shadow-lg">
                 <div className="flex items-center space-x-2 text-sm text-secondary">
                   <FaCheckCircle className="text-primary" />
                   <span>Report analyzed</span>

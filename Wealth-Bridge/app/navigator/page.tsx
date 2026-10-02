@@ -25,15 +25,17 @@ export default function NavigatorPage() {
     },
   ]);
   const [inputMessage, setInputMessage] = useState('');
-  const [streak, setStreak] = useState(7);
-  const [points, setPoints] = useState(450);
-  const [mood, setMood] = useState<'happy' | 'neutral' | 'sad'>('happy');
+  const [streak, setStreak] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [mood, setMood] = useState<'happy' | 'neutral' | 'sad'>('neutral');
   const [loading, setLoading] = useState(true);
+  const [quoteIndex, setQuoteIndex] = useState(0);
 
+  // Unlock state is derived from the user's own record, never hardcoded.
   const achievements = [
-    { id: 1, name: '7-Day Streak', icon: FaFire, unlocked: true, color: 'text-orange-500' },
-    { id: 2, name: 'First Investment', icon: FaTrophy, unlocked: true, color: 'text-amber' },
-    { id: 3, name: 'Credit Builder', icon: FaTrophy, unlocked: false, color: 'text-gray-400' },
+    { id: 1, name: '7-Day Streak', icon: FaFire, unlocked: streak >= 7, color: 'text-orange-500' },
+    { id: 2, name: 'Getting Started', icon: FaTrophy, unlocked: points > 0, color: 'text-amber' },
+    { id: 3, name: 'Credit Builder', icon: FaTrophy, unlocked: points >= 100, color: 'text-gray-400' },
   ];
 
   // Load chat history and user stats from Firebase
@@ -87,12 +89,18 @@ export default function NavigatorPage() {
     'Tell me about budgeting',
   ];
 
+  // Chosen client-side after mount to keep SSR and hydration in agreement.
   const motivationalQuotes = [
     "Every step forward is a step toward financial freedom! 🌟",
     "You're making great progress on your wealth journey! 🍂",
     "Keep up the amazing work - your future self will thank you! 💪",
     "Small steps today lead to big achievements tomorrow! 🎯",
   ];
+
+  useEffect(() => {
+    setQuoteIndex(Math.floor(Math.random() * motivationalQuotes.length));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const botResponses: { [key: string]: string } = {
     credit: "Great question! To improve your credit score: \n\n1. Pay bills on time (35% of score)\n2. Keep credit utilization below 30%\n3. Don't close old credit cards\n4. Monitor your credit report regularly\n\nWant to check your credit dashboard? 📊",
@@ -179,11 +187,11 @@ export default function NavigatorPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          <h1 className="text-5xl font-bold text-secondary mb-4 font-serif">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-secondary mb-4 font-serif">
             Wealth Navigator
           </h1>
           <p className="text-xl text-darkwood">
-            Your AI-powered financial companion
+            Guided answers on credit, investing and budgeting
           </p>
         </motion.div>
 
@@ -217,8 +225,8 @@ export default function NavigatorPage() {
 
         {!loading && user && (
         <div className="grid lg:grid-cols-4 gap-6">
-          {/* Sidebar - Stats & Achievements */}
-          <div className="lg:col-span-1 space-y-6">
+          {/* Sidebar - Stats & Achievements - appears after chat on mobile */}
+          <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
             {/* Avatar */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -310,13 +318,13 @@ export default function NavigatorPage() {
               className="bg-gradient-to-br from-primary to-amber rounded-2xl p-6 shadow-xl text-white text-center"
             >
               <p className="text-sm italic">
-                &quot;{motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)]}&quot;
+                &quot;{motivationalQuotes[quoteIndex]}&quot;
               </p>
             </motion.div>
           </div>
 
-          {/* Main Chat Area */}
-          <div className="lg:col-span-3">
+          {/* Main Chat Area - appears first on mobile */}
+          <div className="lg:col-span-3 order-1 lg:order-2">
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
