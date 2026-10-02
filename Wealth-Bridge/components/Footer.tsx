@@ -53,8 +53,8 @@ export default function Footer() {
 
         <div className="mt-8 pt-6 border-t border-white/20 text-xs text-white/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <span>© {new Date().getFullYear()} WealthBridge, powered by RMA.</span>
-          <div className="flex items-center gap-3">
-            <Link href="/terms" className="hover:text-white">Terms & Conditions</Link>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link href="/terms" className="hover:text-white shrink-0">Terms & Conditions</Link>
             <span>For educational purposes only. Not legal or financial advice.</span>
           </div>
         </div>

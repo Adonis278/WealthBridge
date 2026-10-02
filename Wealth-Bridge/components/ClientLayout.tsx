@@ -9,13 +9,15 @@ const SeasonalBackdrop = dynamic(() => import('@/components/SeasonalBackdrop'), 
   ssr: false,
 });
 
+const FULL_BACKDROP_PATHS = new Set(['/', '/login', '/signup']);
+
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const showBackdrop = pathname === '/' || pathname === '/login' || pathname === '/signup';
+  const intensity = FULL_BACKDROP_PATHS.has(pathname) ? 'full' : 'subtle';
 
   return (
     <SeasonalThemeProvider>
-      {showBackdrop && <SeasonalBackdrop />}
+      <SeasonalBackdrop intensity={intensity} />
       {children}
     </SeasonalThemeProvider>
   );

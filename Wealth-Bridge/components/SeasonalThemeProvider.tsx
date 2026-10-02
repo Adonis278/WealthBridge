@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 type SeasonalTheme = 'fall' | 'winter';
 
@@ -15,7 +15,7 @@ const SNOW_WEATHER_CODES = new Set([71, 73, 75, 77, 85, 86]);
 
 function getSeasonFromDate(date: Date): SeasonalTheme {
   const month = date.getMonth();
-  return month === 11 || month === 0 || month === 1 ? 'winter' : 'fall';
+  return month === 11 || month === 0 || month === 1 || month === 2 ? 'winter' : 'fall';
 }
 
 function shouldUseWinterTheme(payload: {
@@ -77,7 +77,8 @@ async function fetchSeasonFromWeather(latitude: number, longitude: number): Prom
 export default function SeasonalThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<SeasonalTheme>(() => getSeasonFromDate(new Date()));
 
-  useEffect(() => {
+  // useLayoutEffect runs synchronously before browser paint – prevents theme flash
+  useLayoutEffect(() => {
     applyThemeClass(theme);
   }, [theme]);
 
@@ -85,7 +86,11 @@ export default function SeasonalThemeProvider({ children }: { children: React.Re
     let cancelled = false;
 
     const fallbackTheme = getSeasonFromDate(new Date());
-    setTheme(fallbackTheme);
+
+    if (fallbackTheme === 'winter') {
+      setTheme('winter');
+      return;
+    }
 
     if (!navigator?.geolocation) {
       return;

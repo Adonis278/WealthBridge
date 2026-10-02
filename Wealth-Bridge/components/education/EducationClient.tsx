@@ -760,10 +760,10 @@ export default function EducationPage() {
                                 : <FaBook className="text-accent text-lg flex-shrink-0" />}
                               <div>
                                 <p className="font-medium text-sm">{lesson.title}</p>
-                                <p className="text-xs text-darkwood/60">{lesson.duration}</p>
+                                <p className="text-xs text-darkwood/80">{lesson.duration}</p>
                               </div>
                             </div>
-                            <FaChevronRight className="text-darkwood/40 group-hover:text-primary transition-colors flex-shrink-0" />
+                            <FaChevronRight className="text-darkwood/80 group-hover:text-primary transition-colors flex-shrink-0" />
                           </button>
                         );
                       })}
@@ -883,7 +883,7 @@ export default function EducationPage() {
                               ? 'border-primary bg-primary/10 text-secondary font-semibold'
                               : 'border-accent/50 bg-white/60 text-darkwood hover:border-primary/50'
                           }`}>
-                          <span className="font-bold text-primary/70 mr-2">{String.fromCharCode(65 + i)}.</span>{opt}
+                          <span className="font-bold text-primary mr-2">{String.fromCharCode(65 + i)}.</span>{opt}
                         </button>
                       ))}
                     </div>
@@ -925,7 +925,7 @@ export default function EducationPage() {
                                 <span className="font-semibold">Correct answer:</span> {q.options[q.answer]}
                               </p>
                             )}
-                            <p className="text-xs text-darkwood/70 italic">{q.explanation}</p>
+                            <p className="text-xs text-darkwood/80 italic">{q.explanation}</p>
                           </div>
                         );
                       })}

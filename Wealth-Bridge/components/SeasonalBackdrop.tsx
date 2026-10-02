@@ -13,18 +13,23 @@ type Particle = {
   size: number;
 };
 
-const PARTICLE_COUNT = 10;
-const ORB_COUNT = 3;
+interface SeasonalBackdropProps {
+  /** 'full' shows all particles + orbs (landing pages); 'subtle' shows fewer (inner pages) */
+  intensity?: 'full' | 'subtle';
+}
 
-export default function SeasonalBackdrop() {
+export default function SeasonalBackdrop({ intensity = 'full' }: SeasonalBackdropProps) {
   const { theme } = useSeasonalTheme();
+  const particleCount = intensity === 'full' ? 10 : 5;
+  const orbCount = intensity === 'full' ? 3 : 0;
+
   const [particles, setParticles] = useState<Particle[]>([]);
   const [viewportHeight, setViewportHeight] = useState(800);
   const [orbs, setOrbs] = useState<Particle[]>([]);
 
   useEffect(() => {
     const nextParticles: Particle[] = [];
-    for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+    for (let i = 0; i < particleCount; i += 1) {
       nextParticles.push({
         id: i,
         left: Math.random() * 100,
@@ -34,11 +39,11 @@ export default function SeasonalBackdrop() {
       });
     }
     setParticles(nextParticles);
-  }, [theme]);
+  }, [theme, particleCount]);
 
   useEffect(() => {
     const nextOrbs: Particle[] = [];
-    for (let i = 0; i < ORB_COUNT; i += 1) {
+    for (let i = 0; i < orbCount; i += 1) {
       nextOrbs.push({
         id: i,
         left: Math.random() * 100,
@@ -48,7 +53,7 @@ export default function SeasonalBackdrop() {
       });
     }
     setOrbs(nextOrbs);
-  }, [theme]);
+  }, [theme, orbCount]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -66,7 +71,7 @@ export default function SeasonalBackdrop() {
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-      {theme === 'winter' && (
+      {theme === 'winter' && orbCount > 0 && (
         <div className="absolute inset-0">
           {orbs.map((orb) => (
             <motion.div
@@ -108,7 +113,7 @@ export default function SeasonalBackdrop() {
                 ? [0, Math.sin(particle.id) * 40, Math.sin(particle.id + 1) * -30, 0]
                 : [0, Math.sin(particle.id) * 100, Math.sin(particle.id + 1) * -50, 0],
             rotate: theme === 'winter' ? [0, 180, 360] : [0, 360, 720],
-            opacity: [0, 0.7, 0.7, 0],
+            opacity: [0, intensity === 'full' ? 0.7 : 0.4, intensity === 'full' ? 0.7 : 0.4, 0],
           }}
           transition={{
             duration: particle.duration,

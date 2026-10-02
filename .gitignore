@@ -19,6 +19,9 @@ pnpm-debug.log*
 # Firebase local cache
 .firebase/
 
+# Explicitly ignore the app local env
+/Wealth-Bridge/.env.local
+
 # OS
 .DS_Store
 Thumbs.db
