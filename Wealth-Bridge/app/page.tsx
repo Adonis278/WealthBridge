@@ -3,9 +3,30 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { FaArrowRight, FaChartLine, FaCheckCircle, FaCloudUploadAlt, FaShieldAlt, FaSnowflake } from 'react-icons/fa';
+import Image from 'next/image';
+import { FaArrowRight, FaChartLine, FaCloudUploadAlt, FaShieldAlt } from 'react-icons/fa';
+import { useSeasonalTheme } from '@/components/SeasonalThemeProvider';
+
+/**
+ * Hero artwork per season. Which one shows is driven by the same
+ * SeasonalThemeProvider that already picks the palette — it reads live
+ * conditions from Open-Meteo and falls back to the calendar month.
+ */
+const HERO_ART = {
+  fall: {
+    src: '/hero-fall.webp',
+    alt: 'A wooden footbridge over a stream running through autumn woodland',
+  },
+  winter: {
+    src: '/hero-winter.webp',
+    alt: 'A wooden footbridge over a stream running through snow-covered woodland',
+  },
+} as const;
 
 export default function Home() {
+  const { theme } = useSeasonalTheme();
+  const art = HERO_ART[theme] ?? HERO_ART.fall;
+
   const highlights = [
     {
       title: 'Credit Builder Core',
@@ -33,19 +54,35 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="container mx-auto px-4 py-20">
-          <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
+      <section className="relative overflow-hidden -mt-[88px] pt-[88px] min-h-[620px] lg:min-h-[760px] flex items-center">
+        {/* Seasonal artwork, dissolving into the page background toward the copy */}
+        <div
+          aria-hidden
+          className="pointer-events-none select-none absolute inset-y-0 right-0 w-full lg:w-[62%]"
+        >
+          <div className="hero-art relative h-full w-full">
+            <Image
+              key={art.src}
+              src={art.src}
+              alt=""
+              fill
+              priority
+              sizes="(max-width: 1023px) 100vw, 62vw"
+              className="object-cover object-center"
+            />
+          </div>
+          {/* Soften the bottom edge into the next section */}
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
+        </div>
+
+        <div className="container relative mx-auto px-4 py-20">
+          <div className="max-w-xl">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-white/70 border border-amber text-sm text-secondary">
-                <FaSnowflake className="text-primary" />
-                <span>Winter release focused on Credit Builder</span>
-              </div>
-              <h1 className="mt-6 text-3xl sm:text-4xl md:text-6xl font-semibold text-secondary leading-tight font-serif">
+              <h1 className="text-3xl sm:text-4xl md:text-6xl font-semibold text-secondary leading-tight font-serif">
                 Credit clarity, without the heavy lift.
               </h1>
               <p className="mt-5 text-lg md:text-xl text-darkwood max-w-2xl">
@@ -79,51 +116,6 @@ export default function Home() {
                 <div className="bg-white/70 rounded-2xl p-4 border border-amber">
                   <div className="text-2xl font-semibold text-secondary">Private</div>
                   <div>Visible only to you</div>
-                </div>
-              </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="relative"
-            >
-              <div className="rounded-3xl border border-amber bg-white/80 p-6 shadow-2xl backdrop-blur-xl relative">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-darkwood">Credit Builder</p>
-                    <h2 className="text-2xl font-semibold text-secondary mt-2">Score Momentum</h2>
-                  </div>
-                  <div className="h-10 w-10 rounded-full bg-white/70 border border-amber flex items-center justify-center">
-                    <FaChartLine className="text-primary" />
-                  </div>
-                </div>
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-darkwood">Utilization</span>
-                    <span className="text-secondary font-semibold">28%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-white/70">
-                    <div className="h-2 rounded-full bg-primary" style={{ width: '72%' }} />
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-darkwood">Payment history</span>
-                    <span className="text-secondary font-semibold">Excellent</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-white/70">
-                    <div className="h-2 rounded-full bg-primary" style={{ width: '90%' }} />
-                  </div>
-                </div>
-                <div className="mt-6 p-4 rounded-2xl bg-primary text-white">
-                  <div className="text-sm uppercase tracking-widest">Next best action</div>
-                  <div className="mt-2 text-lg font-semibold">Lower utilization under 25%</div>
-                </div>
-              </div>
-              <div className="hidden sm:block absolute -bottom-6 -left-6 bg-white/80 border border-amber rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center space-x-2 text-sm text-secondary">
-                  <FaCheckCircle className="text-primary" />
-                  <span>Report analyzed</span>
                 </div>
               </div>
             </motion.div>

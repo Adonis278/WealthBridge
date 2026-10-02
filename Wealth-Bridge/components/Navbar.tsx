@@ -46,12 +46,15 @@ const Navbar = () => {
 
   return (
     <>
-      <nav className="bg-gradient-to-r from-secondary to-darkwood shadow-lg sticky top-0 z-50">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
+      {/* Floating pill header. It is fixed and out of flow so the home hero
+          artwork can run full-bleed underneath it; `main` carries the matching
+          top padding (see app/layout.tsx). */}
+      <nav className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4 pointer-events-none">
+        <div className="pointer-events-auto container mx-auto rounded-2xl border border-white/25 bg-gradient-to-r from-secondary/90 to-darkwood/85 shadow-xl backdrop-blur-md">
+          <div className="flex items-center justify-between h-16 px-4 sm:px-5">
             {/* Logo */}
-            <Link href="/" className="flex items-center space-x-2 group" onClick={() => setIsMenuOpen(false)}>
-              <SeasonIcon className="text-accent text-2xl group-hover:rotate-12 transition-transform" />
+            <Link href="/" className="flex items-center space-x-2 group shrink-0" onClick={() => setIsMenuOpen(false)}>
+              <SeasonIcon className="text-accent text-2xl group-hover:rotate-12 transition-transform shrink-0" />
               <div className="leading-tight">
                 <div className="text-white font-serif text-xl font-bold">WealthBridge</div>
                 <div className="text-white text-[10px] uppercase tracking-[0.2em]">Powered by RMA</div>
@@ -59,7 +62,7 @@ const Navbar = () => {
             </Link>
 
             {/* Desktop Navigation Links */}
-            <div className="hidden md:flex space-x-1">
+            <div className="hidden xl:flex space-x-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -72,8 +75,8 @@ const Navbar = () => {
                       isActive
                         ? 'bg-primary text-white'
                         : isCreditBuilder
-                          ? 'bg-white/80 text-secondary border border-amber hover:bg-white font-semibold'
-                          : 'text-accent hover:bg-amber hover:text-secondary'
+                          ? 'bg-white/90 text-secondary border border-white/60 hover:bg-white font-semibold'
+                          : 'text-white/85 hover:bg-white/15 hover:text-white'
                     }`}
                   >
                     <Icon className="text-sm shrink-0" />
@@ -84,10 +87,10 @@ const Navbar = () => {
             </div>
 
             {/* Desktop Auth Buttons */}
-            <div className="hidden md:flex items-center space-x-3">
+            <div className="hidden xl:flex items-center space-x-3">
               {user ? (
                 <>
-                  <Link href="/profile" className="flex items-center space-x-2 text-accent hover:text-white transition-all">
+                  <Link href="/profile" className="flex items-center space-x-2 text-white/85 hover:text-white transition-all">
                     <FaUserCircle className="text-2xl" />
                     <span className="text-sm truncate max-w-[120px]">{user.displayName || 'Profile'}</span>
                   </Link>
@@ -103,7 +106,7 @@ const Navbar = () => {
                 <>
                   <Link
                     href="/login"
-                    className="flex items-center space-x-2 text-accent hover:text-white px-4 py-2 rounded-lg transition-all text-sm font-medium"
+                    className="flex items-center space-x-2 text-white/85 hover:text-white px-4 py-2 rounded-lg transition-all text-sm font-medium"
                   >
                     <FaSignInAlt />
                     <span>Login</span>
@@ -121,7 +124,7 @@ const Navbar = () => {
 
             {/* Mobile Hamburger Button */}
             <button
-              className="md:hidden text-accent p-2 rounded-lg hover:bg-white/10 transition-all focus:outline-none"
+              className="xl:hidden text-white/90 p-2 rounded-lg hover:bg-white/15 transition-all focus:outline-none"
               onClick={() => setIsMenuOpen((prev) => !prev)}
               aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={isMenuOpen}
@@ -143,7 +146,7 @@ const Navbar = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+              className="fixed inset-0 bg-black/50 z-40 xl:hidden"
               onClick={() => setIsMenuOpen(false)}
             />
 
@@ -154,7 +157,7 @@ const Navbar = () => {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'tween', duration: 0.25 }}
-              className="fixed top-0 right-0 h-full w-72 max-w-[85vw] bg-gradient-to-b from-secondary to-darkwood shadow-2xl z-50 md:hidden flex flex-col"
+              className="fixed top-0 right-0 h-full w-72 max-w-[85vw] bg-gradient-to-b from-secondary to-darkwood shadow-2xl z-50 xl:hidden flex flex-col"
             >
               {/* Drawer header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/20">

@@ -52,6 +52,57 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-fraunces), 'Fraunces', serif;
 }
 
+/* Hero artwork.
+   The seasonal photo sits on the right and dissolves into the page background
+   so the headline always lands on clean canvas rather than on the image.
+   Masking (rather than overlaying a tinted panel) keeps the dissolve neutral
+   across both the fall and winter palettes. */
+/* On narrow screens the copy spans the full width, so the photo sits behind it
+   as a faint backdrop, fading out toward the top where the headline sits. */
+.hero-art {
+  opacity: 0.26;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.5) 30%,
+    #000 70%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.5) 30%,
+    #000 70%
+  );
+}
+
+@media (min-width: 1024px) {
+  .hero-art {
+    opacity: 1;
+    /* Stays transparent well past the copy column, so the headline never sits
+       on top of the photograph. */
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      rgba(0, 0, 0, 0.12) 24%,
+      rgba(0, 0, 0, 0.6) 44%,
+      #000 62%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      rgba(0, 0, 0, 0.12) 24%,
+      rgba(0, 0, 0, 0.6) 44%,
+      #000 62%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-art {
+    transition: none !important;
+  }
+}
+
 /* Frosted glass effect */
 .frosted-glass {
   background: rgba(255, 255, 255, 0.7);

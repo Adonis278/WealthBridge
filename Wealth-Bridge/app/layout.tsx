@@ -48,7 +48,10 @@ export default function RootLayout({
         <AuthProvider>
           <ClientLayout>
             <Navbar />
-            <main className="relative z-10">
+            {/* The header is fixed and out of flow, so reserve its height here.
+                Pages that want artwork running underneath it (the home hero)
+                cancel this with a matching negative top margin. */}
+            <main className="relative z-10 pt-[88px]">
               {children}
             </main>
             <Footer />
