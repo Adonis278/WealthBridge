@@ -1,13 +1,14 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
   serverTimestamp,
-  arrayUnion 
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 export interface LessonProgress {
   id: number;
@@ -25,6 +26,10 @@ export interface ModuleProgress {
   lastUpdated: Date;
 }
 
+// Owned by the user via the document path — see firestore.rules.
+const progressRef = (userId: string, moduleId: string) =>
+  doc(db, 'users', userId, 'progress', moduleId);
+
 // Save lesson completion
 export const saveEducationProgress = async (
   userId: string,
@@ -33,10 +38,11 @@ export const saveEducationProgress = async (
   lessons: LessonProgress[]
 ) => {
   try {
-    const progressRef = doc(db, 'progress', `${userId}_${moduleId}`);
-    const completionRate = (lessons.filter(l => l.completed).length / lessons.length) * 100;
+    const completionRate = lessons.length
+      ? (lessons.filter((l) => l.completed).length / lessons.length) * 100
+      : 0;
 
-    await setDoc(progressRef, {
+    await setDoc(progressRef(userId, moduleId), {
       userId,
       moduleId,
       moduleName,
@@ -48,15 +54,14 @@ export const saveEducationProgress = async (
     return { success: true };
   } catch (error) {
     console.error('Error saving progress:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
 // Get user's education progress
 export const getEducationProgress = async (userId: string, moduleId: string) => {
   try {
-    const progressRef = doc(db, 'progress', `${userId}_${moduleId}`);
-    const progressDoc = await getDoc(progressRef);
+    const progressDoc = await getDoc(progressRef(userId, moduleId));
 
     if (progressDoc.exists()) {
       return { success: true, data: progressDoc.data() };
@@ -64,7 +69,7 @@ export const getEducationProgress = async (userId: string, moduleId: string) => 
     return { success: true, data: null };
   } catch (error) {
     console.error('Error getting progress:', error);
-    return { success: false, error };
+    return { success: false, data: null, message: describeFirestoreError(error) };
   }
 };
 
@@ -75,28 +80,34 @@ export const saveQuizScore = async (
   score: number
 ) => {
   try {
-    const progressRef = doc(db, 'progress', `${userId}_${moduleId}`);
-    
-    await updateDoc(progressRef, {
+    // setDoc+merge rather than updateDoc: the module doc may not exist yet if
+    // the user jumps straight to the quiz.
+    await setDoc(progressRef(userId, moduleId), {
+      userId,
+      moduleId,
       quizScores: arrayUnion(score),
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     return { success: true };
   } catch (error) {
     console.error('Error saving quiz score:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
 // Get all user progress
 export const getAllUserProgress = async (userId: string) => {
   try {
-    const progressRef = collection(db, 'progress');
-    // In a real app, you'd use a query here
-    return { success: true, data: [] };
+    const snapshot = await getDocs(collection(db, 'users', userId, 'progress'));
+    const data = snapshot.docs.map((item) => ({
+      moduleId: item.id,
+      ...item.data(),
+    }));
+
+    return { success: true, data };
   } catch (error) {
     console.error('Error getting all progress:', error);
-    return { success: false, error };
+    return { success: false, data: [], message: describeFirestoreError(error) };
   }
 };

@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { FaArrowRight, FaBolt, FaChartLine, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { getRecentSessions } from '@/lib/creditBuilderService';
 
 interface AnalysisRecord {
   id: string;
@@ -24,6 +23,7 @@ interface AnalysisHistoryProps {
 export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -31,28 +31,38 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
     const loadAnalyses = async () => {
       setAnalysesLoading(true);
       try {
-        const q = query(
-          collection(db, 'creditAnalysisResults'),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc'),
-          limit(5)
-        );
-        const snap = await getDocs(q);
+        // Analyses are stored on the credit builder session itself — that is
+        // the only place the app writes them and the only place the security
+        // rules allow reading them from.
+        const sessions = await getRecentSessions(userId, 20);
         if (!active) return;
 
-        const rows: AnalysisRecord[] = snap.docs.map((d) => ({
-          id: d.id,
-          score: d.data().score ?? null,
-          projectedScore: d.data().projectedScore ?? null,
-          scoreBand: d.data().scoreBand ?? null,
-          goalType: d.data().goalType ?? null,
-          riskAlerts: d.data().riskAlerts ?? [],
-          createdAt: d.data().createdAt ?? null,
-        }));
+        const rows: AnalysisRecord[] = sessions
+          .filter((session) => Boolean(session.analysis))
+          .slice(0, 5)
+          .map((session) => {
+            const summary = (session.analysis?.rawResult as
+              | { credit_summary?: Record<string, unknown> }
+              | undefined)?.credit_summary;
+
+            return {
+              id: session.id,
+              score:
+                (summary?.current_score as number | undefined) ??
+                session.creditReport?.scoreSnapshot ??
+                null,
+              projectedScore: (summary?.projected_score as number | undefined) ?? null,
+              scoreBand: (summary?.score_band as string | undefined) ?? null,
+              goalType: session.goals?.primaryGoal ?? null,
+              riskAlerts: session.analysis?.riskWarnings ?? [],
+              createdAt: session.updatedAt ?? session.createdAt ?? null,
+            };
+          });
 
         setAnalyses(rows);
       } catch (e) {
         console.error('Failed to load analyses:', e);
+        if (active) setLoadError('Could not load your analysis history.');
       } finally {
         if (active) setAnalysesLoading(false);
       }
@@ -86,6 +96,12 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
       {analysesLoading ? (
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent" />
+        </div>
+      ) : loadError ? (
+        <div className="text-center py-10 border-2 border-dashed border-red-200 rounded-xl bg-red-50/50">
+          <FaExclamationTriangle className="text-3xl text-red-400 mx-auto mb-3" />
+          <p className="text-secondary font-semibold">{loadError}</p>
+          <p className="text-sm text-darkwood mt-1">Try reloading the page.</p>
         </div>
       ) : analyses.length === 0 ? (
         <div className="text-center py-10 border-2 border-dashed border-accent/60 rounded-xl">
@@ -132,15 +148,15 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
                   <div className="flex items-center gap-4">
                     <div className="text-center">
                       <div className={`text-4xl font-black tabular-nums ${scoreColor}`}>{analysis.score ?? '—'}</div>
-                      <div className="text-xs text-darkwood/60 font-medium">{analysis.scoreBand ?? 'Score'}</div>
+                      <div className="text-xs text-darkwood/80 font-medium">{analysis.scoreBand ?? 'Score'}</div>
                     </div>
                     {analysis.projectedScore && (
                       <div className="text-center">
-                        <div className="flex items-center gap-1 text-2xl font-bold text-primary/70">
+                        <div className="flex items-center gap-1 text-2xl font-bold text-primary">
                           <FaBolt className="text-sm" />
                           {analysis.projectedScore}
                         </div>
-                        <div className="text-xs text-darkwood/60 font-medium">6-mo target</div>
+                        <div className="text-xs text-darkwood/80 font-medium">6-mo target</div>
                       </div>
                     )}
                   </div>
@@ -149,7 +165,7 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
                     <div className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full inline-block mb-1">
                       {analysis.goalType ? goalLabel[analysis.goalType] ?? analysis.goalType : 'General'}
                     </div>
-                    <div className="text-xs text-darkwood/60 block">{date}</div>
+                    <div className="text-xs text-darkwood/80 block">{date}</div>
                   </div>
                 </div>
 
@@ -165,7 +181,7 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
                       </div>
                     ))}
                     {analysis.riskAlerts.length > 2 && (
-                      <p className="text-xs text-darkwood/50 pl-1">+{analysis.riskAlerts.length - 2} more alerts in full report</p>
+                      <p className="text-xs text-darkwood/80 pl-1">+{analysis.riskAlerts.length - 2} more alerts in full report</p>
                     )}
                   </div>
                 ) : (
@@ -178,7 +194,7 @@ export default function AnalysisHistory({ userId }: AnalysisHistoryProps) {
           })}
 
           {analyses.length === 5 && (
-            <p className="text-center text-xs text-darkwood/50 pt-1">Showing 5 most recent analyses</p>
+            <p className="text-center text-xs text-darkwood/80 pt-1">Showing 5 most recent analyses</p>
           )}
         </div>
       )}

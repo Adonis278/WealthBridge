@@ -10,12 +10,23 @@ import {
 } from 'react-icons/fa';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCreditScore } from '@/lib/creditService';
 import { addPoints } from '@/lib/gamificationService';
-import { db, storage } from '@/lib/firebase';
-import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import {
+  appendAnalysisVersion,
+  createSession,
+  getLatestSession,
+  saveAnalysis,
+  saveAnalysisError,
+  saveDraftStep,
+  saveParsedCreditReport,
+  submitForAnalysis,
+  uploadCreditReport,
+  type AnalysisPayload,
+} from '@/lib/creditBuilderService';
+import { postAuthedJson } from '@/lib/apiClient';
 
 const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
 
@@ -48,6 +59,11 @@ interface AiResult {
   action_plan: Array<{ phase: string; steps: string[] }>;
 }
 
+interface AnalyzeResponse {
+  advice?: string;
+  result?: AiResult | null;
+}
+
 interface StrategyReportSection {
   index: number;
   marker: string;
@@ -55,6 +71,20 @@ interface StrategyReportSection {
   heading: string;
   key: string;
   content: string;
+}
+
+interface ProfileContext {
+  fullName: string;
+  email: string;
+  phone: string;
+  location: string;
+}
+
+interface ObligationContext {
+  monthlyAuto: string;
+  monthlyStudentLoans: string;
+  monthlyCreditCardMinimums: string;
+  otherMonthlyDebt: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -155,7 +185,7 @@ function parseStrategyReportSections(markdown: string): StrategyReportSection[] 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CreditBuilderPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   // Stage: 1=Goal Capture, 2=Credit Access, 3=Financial Context, 4=Dashboard
   const [stage, setStage] = useState<1 | 2 | 3 | 4>(1);
@@ -176,15 +206,27 @@ export default function CreditBuilderPage() {
   const [reportAnalysis, setReportAnalysis] = useState<{
     score?: number; positives: string[]; warnings: string[]; recommendations: string[];
   } | null>(null);
-  const [reportUploadId, setReportUploadId] = useState<string | null>(null);
   const [softPullLoading, setSoftPullLoading] = useState(false);
   const [softPullStatus, setSoftPullStatus] = useState<string | null>(null);
   const [firebaseWarning, setFirebaseWarning] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Stage 3 – Financial context
   const [financialContext, setFinancialContext] = useState<FinancialContext>({
     occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '',
     totalCreditLimit: '', savings: '', selfEmployed: false,
+  });
+  const [profileContext, setProfileContext] = useState<ProfileContext>({
+    fullName: '',
+    email: '',
+    phone: '',
+    location: '',
+  });
+  const [obligationContext, setObligationContext] = useState<ObligationContext>({
+    monthlyAuto: '',
+    monthlyStudentLoans: '',
+    monthlyCreditCardMinimums: '',
+    otherMonthlyDebt: '',
   });
 
   // Dashboard
@@ -283,50 +325,198 @@ export default function CreditBuilderPage() {
     load().catch(console.error);
   }, [user]);
 
-  // ── Restore latest saved full analysis on login ──────────────────────────
+  const toNumberOrNull = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && value !== '' ? parsed : null;
+  };
+
+  useEffect(() => {
+    if (!user || !sessionId) return;
+    const timer = setTimeout(() => {
+      saveDraftStep(user.uid, sessionId, {
+        profile: {
+          fullName: profileContext.fullName,
+          email: profileContext.email,
+          phone: profileContext.phone,
+          location: profileContext.location,
+        },
+      }).catch((error) => console.error('Failed to save profile draft:', error));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [user, sessionId, profileContext]);
+
+  useEffect(() => {
+    if (!user || !sessionId) return;
+    const timer = setTimeout(() => {
+      saveDraftStep(user.uid, sessionId, {
+        goals: {
+          primaryGoal: goalType || '',
+          targetScore: toNumberOrNull(targetScore),
+          targetTimelineDate: null,
+          targetTimelineMonths: deadlineMonths === 'flexible' ? null : toNumberOrNull(deadlineMonths),
+          majorApplicationsPlanned: majorApplications === 'yes',
+          plannedApplicationsWindow: majorApplications === 'yes' ? (deadlineMonths || '') : '',
+          notes: '',
+        },
+      }).catch((error) => console.error('Failed to save goals draft:', error));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [user, sessionId, goalType, targetScore, deadlineMonths, majorApplications]);
+
+  useEffect(() => {
+    if (!user || !sessionId) return;
+    const timer = setTimeout(() => {
+      const grossMonthly = toNumberOrNull(financialContext.annualIncome)
+        ? Number((Number(financialContext.annualIncome) / 12).toFixed(2))
+        : null;
+      const manualDebt = toNumberOrNull(financialContext.monthlyDebt) ?? 0;
+      const auto = toNumberOrNull(obligationContext.monthlyAuto) ?? 0;
+      const student = toNumberOrNull(obligationContext.monthlyStudentLoans) ?? 0;
+      const cards = toNumberOrNull(obligationContext.monthlyCreditCardMinimums) ?? 0;
+      const other = toNumberOrNull(obligationContext.otherMonthlyDebt) ?? 0;
+      const rent = toNumberOrNull(financialContext.rentMortgage) ?? 0;
+      const totalDebt = manualDebt + auto + student + cards + other + rent;
+      const dti = grossMonthly && grossMonthly > 0 ? Number(((totalDebt / grossMonthly) * 100).toFixed(1)) : null;
+
+      saveDraftStep(user.uid, sessionId, {
+        occupationIncome: {
+          occupationTitle: financialContext.occupation,
+          employerType: financialContext.selfEmployed ? 'self-employed' : 'employed',
+          monthlyGrossIncome: grossMonthly,
+          monthlyNetIncome: null,
+          payFrequency: 'monthly',
+          incomeConfidence: 'estimate',
+        },
+        financialContext,
+        dti: {
+          monthlyRentOrMortgage: toNumberOrNull(financialContext.rentMortgage),
+          monthlyAuto: toNumberOrNull(obligationContext.monthlyAuto),
+          monthlyStudentLoans: toNumberOrNull(obligationContext.monthlyStudentLoans),
+          monthlyCreditCardMinimums: toNumberOrNull(obligationContext.monthlyCreditCardMinimums),
+          otherMonthlyDebt: toNumberOrNull(obligationContext.otherMonthlyDebt),
+          calculatedDTI: dti,
+          inputsUsed: {
+            grossMonthlyIncome: grossMonthly,
+            totalMonthlyDebt: Number(totalDebt.toFixed(2)),
+          },
+        },
+      }).catch((error) => console.error('Failed to save financial draft:', error));
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [user, sessionId, financialContext, obligationContext]);
+
+  useEffect(() => {
+    if (!user || !sessionId) return;
+    const timer = setTimeout(() => {
+      saveDraftStep(user.uid, sessionId, {
+        consent: {
+          agreementAccepted,
+          acceptedAt: agreementAccepted ? new Date().toISOString() : null,
+          termsVersion: 'v1',
+        },
+      }).catch((error) => console.error('Failed to save consent draft:', error));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [user, sessionId, agreementAccepted]);
+
+  useEffect(() => {
+    if (!user) return;
+    setProfileContext((prev) => ({
+      ...prev,
+      email: user.email ?? prev.email,
+      fullName: user.displayName ?? prev.fullName,
+    }));
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || analysisLookupLoading || sessionId) return;
+    createSession(user.uid, {
+      consent: {
+        agreementAccepted: false,
+        acceptedAt: null,
+        termsVersion: 'v1',
+      },
+      profile: {
+        fullName: user.displayName ?? '',
+        email: user.email ?? '',
+        phone: '',
+        location: '',
+      },
+    })
+      .then((id) => setSessionId(id))
+      .catch((error) => console.error('Unable to initialize credit builder session:', error));
+  }, [user, analysisLookupLoading, sessionId]);
+
+  // ── Restore latest saved session on login ────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
 
-    const restoreLatestAnalysis = async () => {
+    const restoreLatestSession = async () => {
       setAnalysisLookupLoading(true);
       try {
-        const q = query(
-          collection(db, 'creditAnalysisResults'),
-          where('userId', '==', user.uid),
-          limit(20)
-        );
-        const snap = await getDocs(q);
+        const latest = await getLatestSession(user.uid);
         if (cancelled) return;
 
-        if (snap.empty) {
+        if (!latest) {
           setHasSavedAnalysis(false);
+          const createdSessionId = await createSession(user.uid, {
+            consent: {
+              agreementAccepted: false,
+              acceptedAt: null,
+              termsVersion: 'v1',
+            },
+            profile: {
+              fullName: user.displayName ?? '',
+              email: user.email ?? '',
+              phone: '',
+              location: '',
+            },
+          });
+          setSessionId(createdSessionId);
           setStage(1);
           setAiResult(null);
           setLlmAdvice(null);
           setReportText(null);
           setReportAnalysis(null);
           setReportFileName(null);
-          setReportUploadId(null);
           setRestoredAnalysisLabel(null);
           return;
         }
 
-        const docs = snap.docs
-          .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
-          .sort((a, b) => {
-            const aTs = a.createdAt?.seconds ? Number(a.createdAt.seconds) : 0;
-            const bTs = b.createdAt?.seconds ? Number(b.createdAt.seconds) : 0;
-            return bTs - aTs;
-          });
-
-        const latest = docs[0];
+        setSessionId(latest.id);
         setHasSavedAnalysis(true);
 
-        if (latest.goalType) setGoalType(latest.goalType as GoalType);
-        if (latest.targetScore) setTargetScore(String(latest.targetScore));
-        if (latest.deadlineMonths) setDeadlineMonths(String(latest.deadlineMonths));
-        if (latest.majorApplications) setMajorApplications(String(latest.majorApplications));
+        if (latest.goals?.primaryGoal) setGoalType(latest.goals.primaryGoal as GoalType);
+        if (latest.goals?.targetScore) setTargetScore(String(latest.goals.targetScore));
+        if (latest.goals?.targetTimelineMonths) setDeadlineMonths(String(latest.goals.targetTimelineMonths));
+        if (latest.goals?.majorApplicationsPlanned != null) {
+          setMajorApplications(latest.goals.majorApplicationsPlanned ? 'yes' : 'no');
+        }
+
+        if (latest.profile) {
+          setProfileContext((prev) => ({
+            ...prev,
+            ...latest.profile,
+          }));
+        }
+
+        if (latest.consent?.agreementAccepted != null) {
+          setAgreementAccepted(Boolean(latest.consent.agreementAccepted));
+        }
+
+        if (latest.occupationIncome) {
+          const occupationIncome = latest.occupationIncome;
+          setFinancialContext((prev) => ({
+            ...prev,
+            occupation: occupationIncome.occupationTitle ?? prev.occupation,
+            annualIncome: occupationIncome.monthlyGrossIncome
+              ? String(Number(occupationIncome.monthlyGrossIncome) * 12)
+              : prev.annualIncome,
+            selfEmployed: occupationIncome.employerType === 'self-employed',
+          }));
+        }
 
         if (latest.financialContext) {
           setFinancialContext((prev) => ({
@@ -335,13 +525,40 @@ export default function CreditBuilderPage() {
           }));
         }
 
-        if (latest.reportAnalysis) setReportAnalysis(latest.reportAnalysis);
-        if (latest.reportFileName) setReportFileName(String(latest.reportFileName));
-        if (latest.reportUploadId) setReportUploadId(String(latest.reportUploadId));
-        if (typeof latest.reportText === 'string') setReportText(latest.reportText);
+        if (latest.dti) {
+          const dti = latest.dti;
+          setFinancialContext((prev) => ({
+            ...prev,
+            rentMortgage: dti.monthlyRentOrMortgage != null ? String(dti.monthlyRentOrMortgage) : prev.rentMortgage,
+            monthlyDebt: dti.inputsUsed?.totalMonthlyDebt != null ? String(dti.inputsUsed.totalMonthlyDebt) : prev.monthlyDebt,
+          }));
+          setObligationContext({
+            monthlyAuto: dti.monthlyAuto != null ? String(dti.monthlyAuto) : '',
+            monthlyStudentLoans: dti.monthlyStudentLoans != null ? String(dti.monthlyStudentLoans) : '',
+            monthlyCreditCardMinimums: dti.monthlyCreditCardMinimums != null ? String(dti.monthlyCreditCardMinimums) : '',
+            otherMonthlyDebt: dti.otherMonthlyDebt != null ? String(dti.otherMonthlyDebt) : '',
+          });
+        }
 
-        if (latest.aiResult) setAiResult(latest.aiResult as AiResult);
-        if (typeof latest.advice === 'string') setLlmAdvice(latest.advice);
+        if (
+          latest.reportAnalysis
+          && Array.isArray((latest.reportAnalysis as { positives?: unknown }).positives)
+          && Array.isArray((latest.reportAnalysis as { warnings?: unknown }).warnings)
+          && Array.isArray((latest.reportAnalysis as { recommendations?: unknown }).recommendations)
+        ) {
+          const restoredReport = latest.reportAnalysis as {
+            score?: number;
+            positives: string[];
+            warnings: string[];
+            recommendations: string[];
+          };
+          setReportAnalysis(restoredReport);
+        }
+        if (latest.creditReport?.fileName) setReportFileName(String(latest.creditReport.fileName));
+        if (typeof latest.creditReport?.textSnippet === 'string') setReportText(latest.creditReport.textSnippet);
+
+        if (latest.analysis?.rawResult) setAiResult(latest.analysis.rawResult as unknown as AiResult);
+        if (typeof latest.analysis?.rawAdvice === 'string') setLlmAdvice(latest.analysis.rawAdvice);
 
         const restoredDate = latest.createdAt?.seconds
           ? new Date(latest.createdAt.seconds * 1000).toLocaleDateString('en-US', {
@@ -349,7 +566,7 @@ export default function CreditBuilderPage() {
             })
           : null;
         setRestoredAnalysisLabel(restoredDate ? `Restored from ${restoredDate}` : 'Restored from your latest saved analysis');
-        setStage(4);
+        setStage(latest.status === 'analyzed' ? 4 : latest.creditReport ? 3 : latest.goals ? 2 : 1);
       } catch (error) {
         console.error('Failed to restore saved credit analysis:', error);
         setHasSavedAnalysis(false);
@@ -359,7 +576,7 @@ export default function CreditBuilderPage() {
       }
     };
 
-    restoreLatestAnalysis();
+    restoreLatestSession();
     return () => {
       cancelled = true;
     };
@@ -412,12 +629,12 @@ export default function CreditBuilderPage() {
   // ── Process uploaded file ─────────────────────────────────────────────────
   const processReportFile = async (file: File) => {
     if (!user) { setReportError('Please log in first.'); return; }
+    if (!sessionId) { setReportError('Session not ready yet. Please try again.'); return; }
     setReportError(null);
     setReportAnalysis(null);
     setReportText(null);
     setReportLoading(true);
     setReportFileName(file.name);
-    setReportUploadId(null);
     try {
       let text = '';
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))
@@ -428,15 +645,23 @@ export default function CreditBuilderPage() {
       setReportText(trimmed);
       const analysis = analyzeReportText(trimmed);
       setReportAnalysis(analysis);
-      // Upload to Firebase Storage
-      const storageRef = ref(storage, `credit-reports/${user.uid}/${Date.now()}-${file.name}`);
-      await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' });
-      const fileUrl = await getDownloadURL(storageRef);
-      const docRef = await addDoc(collection(db, 'creditReports'), {
-        userId: user.uid, fileName: file.name, fileUrl, score: analysis.score ?? null, createdAt: serverTimestamp(),
+      const upload = await uploadCreditReport(user.uid, sessionId, file);
+      await saveDraftStep(user.uid, sessionId, {
+        reportAnalysis: analysis,
       });
-      setReportUploadId(docRef.id);
-      await addDoc(collection(db, 'creditReportAnalyses'), { reportId: docRef.id, analysis, createdAt: serverTimestamp() });
+      await saveParsedCreditReport(user.uid, sessionId, {
+        storagePath: upload.storagePath,
+        fileName: file.name,
+        fileHash: upload.fileHash,
+        parseStatus: 'parsed',
+        scoreSnapshot: analysis.score ?? null,
+        extractedMetrics: {
+          positives: analysis.positives,
+          warnings: analysis.warnings,
+          recommendations: analysis.recommendations,
+        },
+        textSnippet: trimmed.slice(0, 12000),
+      });
       // Advance to Stage 3 — full AI runs after financial context is collected
       setStage(3);
     } catch (error) {
@@ -447,9 +672,30 @@ export default function CreditBuilderPage() {
     }
   };
 
+  // Mirrors the limits enforced in storage.rules so the user gets a clear
+  // message instead of an opaque permission error after a long upload.
+  const MAX_REPORT_BYTES = 10 * 1024 * 1024;
+  const ACCEPTED_REPORT_EXTENSIONS = ['.pdf', '.txt', '.csv'];
+
   const handleFileChange = (file: File | null) => {
     if (!file) return;
     if (!user) { setReportError('Please log in before uploading.'); return; }
+
+    const name = file.name.toLowerCase();
+    const hasAcceptedExtension = ACCEPTED_REPORT_EXTENSIONS.some((ext) => name.endsWith(ext));
+    if (!hasAcceptedExtension) {
+      setReportError('Please upload a PDF, TXT or CSV export of your report.');
+      return;
+    }
+    if (file.size > MAX_REPORT_BYTES) {
+      setReportError('That file is larger than 10 MB. Try a text or CSV export instead.');
+      return;
+    }
+    if (file.size === 0) {
+      setReportError('That file is empty.');
+      return;
+    }
+
     if (!agreementAccepted) { setShowAgreement(true); return; }
     processReportFile(file);
   };
@@ -457,61 +703,67 @@ export default function CreditBuilderPage() {
   // ── AI analysis – called after Stage 3 ───────────────────────────────────
   const runAiAnalysis = async () => {
     if (!reportText) { setLlmError('Upload a report first.'); return; }
+    if (!user || !sessionId) { setLlmError('Session missing. Reload and try again.'); return; }
     setLlmLoading(true);
     setLlmError(null);
     setAiResult(null);
     setLlmAdvice(null);
     try {
-      const resp = await fetch('/api/credit-report-analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: reportText.slice(0, 12000),
-          score: reportAnalysis?.score ?? null,
-          reportId: reportUploadId,
-          profile: { goalType, targetScore, deadlineMonths, majorApplications },
-          financialContext,
-        }),
+      await submitForAnalysis(user.uid, sessionId);
+      const resp = await postAuthedJson<AnalyzeResponse>('/api/credit-report-analyze', {
+        text: reportText.slice(0, 12000),
+        score: reportAnalysis?.score ?? null,
+        profile: { goalType, targetScore, deadlineMonths, majorApplications },
+        financialContext,
       });
-      if (!resp.ok) throw new Error('AI analysis failed. Please try again.');
-      const data = await resp.json();
+      if (!resp.ok) throw new Error(resp.error || 'AI analysis failed. Please try again.');
+      const data = resp.data ?? {};
       if (data.result) {
         setAiResult(data.result as AiResult);
         if (user) addPoints(user.uid, 100).catch(console.error);
       }
       if (data.advice) setLlmAdvice(data.advice);
 
-      if (user) {
-        try {
-          await addDoc(collection(db, 'creditAnalysisResults'), {
-            userId: user.uid,
-            goalType: goalType || null,
-            targetScore: targetScore || null,
-            deadlineMonths: deadlineMonths || null,
-            majorApplications: majorApplications || null,
-            financialContext,
-            reportAnalysis: reportAnalysis ?? null,
-            reportFileName: reportFileName ?? null,
-            reportUploadId: reportUploadId ?? null,
-            reportText: reportText.slice(0, 12000),
-            score: data?.result?.credit_summary?.current_score ?? reportAnalysis?.score ?? creditScore ?? null,
-            projectedScore: data?.result?.credit_summary?.projected_score ?? null,
-            scoreBand: data?.result?.credit_summary?.score_band ?? null,
-            riskAlerts: Array.isArray(data?.result?.risk_alerts) ? data.result.risk_alerts : [],
-            aiResult: data?.result ?? null,
-            advice: typeof data?.advice === 'string' ? data.advice : null,
-            createdAt: serverTimestamp(),
-          });
-          setHasSavedAnalysis(true);
-          setRestoredAnalysisLabel('Saved to your profile');
-        } catch (saveError) {
-          console.error('Failed to save credit analysis result:', saveError);
-        }
-      }
+      const analysisPayload: AnalysisPayload = {
+        analysisSummary: typeof data?.advice === 'string' ? data.advice.slice(0, 2000) : 'AI analysis completed.',
+        factorBreakdown: data?.result?.factor_analysis ?? {},
+        recommendedActions:
+          Array.isArray(data?.result?.action_plan)
+            ? data.result.action_plan.map((phase: any, index: number) => ({
+                priority: index + 1,
+                impact: index === 0 ? 'high' : index === 1 ? 'medium' : 'low',
+                timeline: phase?.phase ?? 'Plan',
+                instructions: Array.isArray(phase?.steps) ? phase.steps.join(' ') : '',
+                steps: phase?.steps ?? [],
+              }))
+            : [],
+        riskWarnings: Array.isArray(data?.result?.risk_alerts) ? data.result.risk_alerts : [],
+        assumptions: {
+          goalType,
+          targetScore,
+          deadlineMonths,
+          majorApplications,
+          incomeUsed: financialContext.annualIncome,
+          reportDate: new Date().toISOString(),
+        },
+        modelVersion: process.env.NEXT_PUBLIC_APP_VERSION || 'v1',
+        agentVersion: 'credit-strategy-engine-2',
+        rawResult: (data?.result as unknown as Record<string, unknown>) ?? null,
+        rawAdvice: typeof data?.advice === 'string' ? data.advice : '',
+      };
+
+      await saveAnalysis(user.uid, sessionId, analysisPayload);
+      await appendAnalysisVersion(user.uid, sessionId, analysisPayload);
+      setHasSavedAnalysis(true);
+      setRestoredAnalysisLabel('Saved to your profile');
 
       setStage(4);
     } catch (err) {
-      setLlmError(err instanceof Error ? err.message : 'Could not run analysis. Please try again.');
+      const message = err instanceof Error ? err.message : 'Could not run analysis. Please try again.';
+      setLlmError(message);
+      if (user && sessionId) {
+        await saveAnalysisError(user.uid, sessionId, message).catch(() => undefined);
+      }
     } finally {
       setLlmLoading(false);
     }
@@ -522,12 +774,9 @@ export default function CreditBuilderPage() {
     setSoftPullLoading(true);
     setSoftPullStatus(null);
     try {
-      const resp = await fetch('/api/credit-soft-pull', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.uid }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Soft pull failed.');
-      setSoftPullStatus(data?.message || 'Request submitted.');
+      const resp = await postAuthedJson<{ message?: string }>('/api/credit-soft-pull', {});
+      if (!resp.ok) throw new Error(resp.error || 'Soft pull failed.');
+      setSoftPullStatus(resp.data?.message || 'Request submitted.');
     } catch {
       setSoftPullStatus('Soft pull requires bureau integration. Feature coming soon.');
     } finally {
@@ -551,6 +800,11 @@ export default function CreditBuilderPage() {
     setExpandedReportSections({});
     setShowAllReportSections(false);
     setRestoredAnalysisLabel(null);
+    setAgreementAccepted(false);
+    setSessionId(null);
+    setHasSavedAnalysis(null);
+    setProfileContext({ fullName: user?.displayName ?? '', email: user?.email ?? '', phone: '', location: '' });
+    setObligationContext({ monthlyAuto: '', monthlyStudentLoans: '', monthlyCreditCardMinimums: '', otherMonthlyDebt: '' });
     setFinancialContext({ occupation: '', annualIncome: '', monthlyDebt: '', rentMortgage: '', totalCreditLimit: '', savings: '', selfEmployed: false });
   };
 
@@ -592,7 +846,16 @@ export default function CreditBuilderPage() {
     );
   }
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-background py-10">
       <div className="container mx-auto px-4 max-w-5xl">
 
@@ -907,7 +1170,7 @@ export default function CreditBuilderPage() {
                       </div>
                     ) : (
                       <>
-                        <FaCloudUploadAlt className="text-4xl text-primary/40 mx-auto mb-2" />
+                        <FaCloudUploadAlt className="text-4xl text-primary mx-auto mb-2" />
                         <div className="text-sm font-semibold text-secondary">Click or drag to upload</div>
                         <div className="text-xs text-darkwood mt-1">PDF · TXT · CSV</div>
                       </>
@@ -992,7 +1255,7 @@ export default function CreditBuilderPage() {
                   >
                     {softPullLoading ? 'Requesting…' : 'Request Soft Pull'}
                   </button>
-                  <p className="text-[10px] text-darkwood/50 text-center mt-2">Bureau integration in progress — coming soon</p>
+                  <p className="text-[10px] text-darkwood/80 text-center mt-2">Bureau integration in progress — coming soon</p>
                 </div>
               </div>
             </div>
@@ -1026,6 +1289,48 @@ export default function CreditBuilderPage() {
                 but improve accuracy.
               </p>
 
+              <div className="grid md:grid-cols-2 gap-5 mb-6">
+                <label className="block">
+                  <span className="text-sm font-semibold text-secondary mb-1.5 block">Full Name</span>
+                  <input
+                    type="text"
+                    value={profileContext.fullName}
+                    placeholder="e.g. Jane Doe"
+                    onChange={e => setProfileContext(prev => ({ ...prev, fullName: e.target.value }))}
+                    className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-secondary mb-1.5 block">Email (from account)</span>
+                  <input
+                    type="email"
+                    value={profileContext.email}
+                    onChange={e => setProfileContext(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full border border-amber rounded-xl px-3 py-2.5 bg-gray-100 text-sm focus:outline-none focus:border-primary transition-all"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-secondary mb-1.5 block">Phone (optional)</span>
+                  <input
+                    type="tel"
+                    value={profileContext.phone}
+                    placeholder="e.g. +1 555 000 0000"
+                    onChange={e => setProfileContext(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-secondary mb-1.5 block">Location (City/State)</span>
+                  <input
+                    type="text"
+                    value={profileContext.location}
+                    placeholder="e.g. Austin, TX"
+                    onChange={e => setProfileContext(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
+                  />
+                </label>
+              </div>
+
               <div className="grid md:grid-cols-2 gap-5">
                 {[
                   { field: 'occupation', label: 'Occupation / Job Title', icon: FaUserTie, type: 'text', placeholder: 'e.g. Software Engineer' },
@@ -1045,6 +1350,26 @@ export default function CreditBuilderPage() {
                       value={(financialContext as any)[field]}
                       placeholder={placeholder}
                       onChange={e => setFinancialContext(prev => ({ ...prev, [field]: e.target.value }))}
+                      className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-5 mt-5">
+                {[
+                  { field: 'monthlyAuto', label: 'Monthly Auto Loan Payment ($)', placeholder: 'e.g. 420' },
+                  { field: 'monthlyStudentLoans', label: 'Monthly Student Loan Payment ($)', placeholder: 'e.g. 180' },
+                  { field: 'monthlyCreditCardMinimums', label: 'Monthly Credit Card Minimums ($)', placeholder: 'e.g. 160' },
+                  { field: 'otherMonthlyDebt', label: 'Other Monthly Debt ($)', placeholder: 'e.g. 90' },
+                ].map(({ field, label, placeholder }) => (
+                  <label key={field} className="block">
+                    <span className="text-sm font-semibold text-secondary mb-1.5 block">{label}</span>
+                    <input
+                      type="number"
+                      value={(obligationContext as any)[field]}
+                      placeholder={placeholder}
+                      onChange={e => setObligationContext(prev => ({ ...prev, [field]: e.target.value }))}
                       className="w-full border border-amber rounded-xl px-3 py-2.5 bg-white/80 text-sm focus:outline-none focus:border-primary transition-all"
                     />
                   </label>
@@ -1224,7 +1549,7 @@ export default function CreditBuilderPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                       <div className="flex items-center space-x-2">
                         <span className="font-bold text-secondary text-sm">{FACTOR_LABELS[key] ?? key}</span>
-                        <span className="text-[10px] text-darkwood/60">({FACTOR_WEIGHTS[key] ?? 0}% of score)</span>
+                        <span className="text-[10px] text-darkwood/80">({FACTOR_WEIGHTS[key] ?? 0}% of score)</span>
                       </div>
                       <div className="flex items-center space-x-2">
                         {data.estimated_score_gain && !data.estimated_score_gain.startsWith('0') && (
@@ -1636,8 +1961,8 @@ export default function CreditBuilderPage() {
             )}
 
             {/* ── Disclaimer ── */}
-            <div className="rounded-xl bg-white/50 border border-amber/30 px-5 py-3 text-xs text-darkwood/60 text-center">
-              <FaShieldAlt className="inline mr-1 text-primary/40" />
+            <div className="rounded-xl bg-white/50 border border-amber/30 px-5 py-3 text-xs text-darkwood/80 text-center">
+              <FaShieldAlt className="inline mr-1 text-primary" />
               AI-generated strategy for educational purposes only. Not financial, legal, or credit repair advice. Results and score projections may vary.
             </div>
           </motion.div>
@@ -1645,5 +1970,6 @@ export default function CreditBuilderPage() {
 
       </div>
     </div>
+    </AuthGuard>
   );
 }

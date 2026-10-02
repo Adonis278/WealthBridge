@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyRequest } from '@/lib/server/verifyAuth';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const userId = typeof body?.userId === 'string' ? body.userId : undefined;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing user id.' }, { status: 400 });
+    // The caller's identity comes from the verified token, never from the body.
+    const caller = await verifyRequest(request);
+    if (!caller) {
+      return NextResponse.json({ error: 'Sign in to request a soft pull.' }, { status: 401 });
     }
 
     const apiKey = process.env.EXPERIAN_API_KEY;
@@ -15,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     if (!apiKey || !apiSecret || !apiBaseUrl) {
       return NextResponse.json(
-        { error: 'Experian integration not configured.' },
+        { error: 'Bureau integration is not enabled yet.' },
         { status: 501 },
       );
     }

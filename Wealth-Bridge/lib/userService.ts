@@ -1,15 +1,17 @@
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  serverTimestamp 
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp
 } from 'firebase/firestore';
-import { 
-  ref, 
-  uploadBytes, 
-  getDownloadURL 
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL
 } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
+import { USER_SCHEMA_VERSION } from '@/lib/schema';
 
 export interface UserProfile {
   userId: string;
@@ -26,19 +28,25 @@ export interface UserProfile {
   };
 }
 
+/** firestore.rules requires uid + schemaVersion + updatedAt on every user write. */
+const userMeta = (userId: string) => ({
+  uid: userId,
+  schemaVersion: USER_SCHEMA_VERSION,
+  updatedAt: serverTimestamp(),
+});
+
 // Get user profile
 export const getUserProfile = async (userId: string) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
+    const userDoc = await getDoc(doc(db, 'users', userId));
 
     if (userDoc.exists()) {
       return { success: true, data: userDoc.data() as UserProfile };
     }
-    return { success: false, error: 'User not found' };
+    return { success: true, data: null };
   } catch (error) {
     console.error('Error getting profile:', error);
-    return { success: false, error };
+    return { success: false, data: null, message: describeFirestoreError(error) };
   }
 };
 
@@ -48,19 +56,19 @@ export const updateUserProfile = async (
   updates: Partial<UserProfile>
 ) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    
-    await updateDoc(userRef, {
+    await updateDoc(doc(db, 'users', userId), {
       ...updates,
-      updatedAt: serverTimestamp(),
+      ...userMeta(userId),
     });
 
     return { success: true };
   } catch (error) {
     console.error('Error updating profile:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 // Upload profile photo
 export const uploadProfilePhoto = async (
@@ -68,25 +76,29 @@ export const uploadProfilePhoto = async (
   file: File
 ) => {
   try {
+    // Mirrors the constraints in storage.rules so the user gets a clear message
+    // instead of an opaque permission error.
+    if (!file.type.startsWith('image/')) {
+      return { success: false, message: 'Please choose an image file.' };
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      return { success: false, message: 'Image must be smaller than 5 MB.' };
+    }
+
     const storageRef = ref(storage, `profile-photos/${userId}`);
-    
-    // Upload file
-    await uploadBytes(storageRef, file);
-    
-    // Get download URL
+    await uploadBytes(storageRef, file, { contentType: file.type });
+
     const photoURL = await getDownloadURL(storageRef);
-    
-    // Update user profile
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
+
+    await updateDoc(doc(db, 'users', userId), {
+      ...userMeta(userId),
       photoURL,
-      updatedAt: serverTimestamp(),
     });
 
     return { success: true, photoURL };
   } catch (error) {
     console.error('Error uploading photo:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };
 
@@ -96,16 +108,14 @@ export const updatePreferences = async (
   preferences: UserProfile['preferences']
 ) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    
-    await updateDoc(userRef, {
+    await updateDoc(doc(db, 'users', userId), {
+      ...userMeta(userId),
       preferences,
-      updatedAt: serverTimestamp(),
     });
 
     return { success: true };
   } catch (error) {
     console.error('Error updating preferences:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };

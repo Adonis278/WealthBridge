@@ -13,9 +13,12 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   ConfirmationResult,
+  setPersistence,
+  browserSessionPersistence,
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { USER_SCHEMA_VERSION } from '@/lib/schema';
 
 declare global {
   interface Window {
@@ -49,38 +52,117 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
+  const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
-    return unsubscribe;
+  /**
+   * Create the user document on first sign-in, and on every later sign-in
+   * touch ONLY identity + login fields.
+   *
+   * Two things this must never do:
+   *  - rewrite `createdAt` (the rules pin it immutable after create)
+   *  - rewrite level/points/streak/achievements (that would reset the user's
+   *    progress on every single login)
+   */
+  const ensureUserProfile = async (activeUser: User) => {
+    try {
+      const userRef = doc(db, 'users', activeUser.uid);
+      const snapshot = await getDoc(userRef);
+
+      if (!snapshot.exists()) {
+        await setDoc(userRef, {
+          uid: activeUser.uid,
+          schemaVersion: USER_SCHEMA_VERSION,
+          email: activeUser.email ?? '',
+          displayName: activeUser.displayName ?? '',
+          photoURL: activeUser.photoURL ?? '',
+          bio: '',
+          location: '',
+          level: 1,
+          points: 0,
+          streak: 0,
+          treeGrowth: 0,
+          achievements: [],
+          preferences: {
+            notifications: true,
+            emailUpdates: true,
+            darkMode: false,
+          },
+          createdAt: serverTimestamp(),
+          lastLoginDate: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        return;
+      }
+
+      await updateDoc(userRef, {
+        uid: activeUser.uid,
+        schemaVersion: USER_SCHEMA_VERSION,
+        email: activeUser.email ?? '',
+        displayName: activeUser.displayName ?? snapshot.data().displayName ?? '',
+        lastLoginDate: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.warn('Unable to update user profile record:', error);
+    }
+  };
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    const initAuth = async () => {
+      try {
+        await setPersistence(auth, browserSessionPersistence);
+      } catch (error) {
+        console.warn('Could not apply session persistence:', error);
+      }
+
+      unsubscribe = onAuthStateChanged(auth, async (activeUser) => {
+        setUser(activeUser);
+        if (activeUser) {
+          await ensureUserProfile(activeUser);
+        }
+        setLoading(false);
+      });
+    };
+
+    initAuth();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let idleTimer: ReturnType<typeof setTimeout>;
+
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        signOut(auth).catch((error) => console.warn('Idle timeout sign-out failed:', error));
+      }, SESSION_IDLE_TIMEOUT_MS);
+    };
+
+    const events: Array<keyof WindowEventMap> = ['mousemove', 'keydown', 'mousedown', 'scroll', 'touchstart'];
+    events.forEach((event) => window.addEventListener(event, resetIdleTimer, { passive: true }));
+    resetIdleTimer();
+
+    return () => {
+      clearTimeout(idleTimer);
+      events.forEach((event) => window.removeEventListener(event, resetIdleTimer));
+    };
+  }, [user]);
 
   const signUp = async (email: string, password: string, displayName: string) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     
-    // Update display name
+    // Update display name, then let ensureUserProfile seed the Firestore doc so
+    // creation lives in exactly one place (and stamps schemaVersion).
     if (userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
-      
-      try {
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          displayName,
-          photoURL: '',
-          createdAt: serverTimestamp(),
-          level: 1,
-          points: 0,
-          streak: 0,
-          achievements: [],
-          lastLoginDate: serverTimestamp(),
-        });
-      } catch (error) {
-        console.warn('User created but profile document save failed:', error);
-      }
+      await ensureUserProfile(userCredential.user);
     }
   };
 
@@ -90,7 +172,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    const credential = await signInWithPopup(auth, provider);
+    if (credential.user) {
+      await ensureUserProfile(credential.user);
+    }
   };
 
   const setupRecaptcha = async (phoneNumber: string): Promise<ConfirmationResult> => {
@@ -114,7 +199,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyOTP = async (otp: string) => {
     if (window.confirmationResult) {
-      await window.confirmationResult.confirm(otp);
+      const credential = await window.confirmationResult.confirm(otp);
+      if (credential.user) {
+        await ensureUserProfile(credential.user);
+      }
     } else {
       throw new Error('No confirmation result found. Please request OTP again.');
     }

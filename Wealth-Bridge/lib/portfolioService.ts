@@ -1,12 +1,15 @@
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
   serverTimestamp,
-  arrayUnion 
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
+
+// Owned by the user via the document path — see firestore.rules.
+const portfolioDocRef = (userId: string) => doc(db, 'users', userId, 'portfolio', 'current');
 
 export interface Holding {
   symbol: string;
@@ -37,7 +40,7 @@ export interface Portfolio {
 // Initialize portfolio for new user
 export const initializePortfolio = async (userId: string, initialBalance: number = 10000) => {
   try {
-    const portfolioRef = doc(db, 'portfolios', userId);
+    const portfolioRef = portfolioDocRef(userId);
     
     await setDoc(portfolioRef, {
       userId,
@@ -53,14 +56,14 @@ export const initializePortfolio = async (userId: string, initialBalance: number
     return { success: true };
   } catch (error) {
     console.error('Error initializing portfolio:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
 // Get user portfolio
 export const getPortfolio = async (userId: string) => {
   try {
-    const portfolioRef = doc(db, 'portfolios', userId);
+    const portfolioRef = portfolioDocRef(userId);
     const portfolioDoc = await getDoc(portfolioRef);
 
     if (portfolioDoc.exists()) {
@@ -73,7 +76,7 @@ export const getPortfolio = async (userId: string) => {
     return { success: true, data: newDoc.data() as Portfolio };
   } catch (error) {
     console.error('Error getting portfolio:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
@@ -86,20 +89,20 @@ export const savePortfolio = async (
   gainLoss: number
 ) => {
   try {
-    const portfolioRef = doc(db, 'portfolios', userId);
+    const portfolioRef = portfolioDocRef(userId);
     
-    await updateDoc(portfolioRef, {
+    await setDoc(portfolioRef, {
       balance,
       holdings,
       totalValue,
       gainLoss,
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     return { success: true };
   } catch (error) {
     console.error('Error saving portfolio:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
@@ -109,23 +112,23 @@ export const recordTransaction = async (
   transaction: Omit<Transaction, 'id' | 'timestamp'>
 ) => {
   try {
-    const portfolioRef = doc(db, 'portfolios', userId);
+    const portfolioRef = portfolioDocRef(userId);
     
     const transactionWithMetadata = {
       ...transaction,
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       timestamp: new Date(),
     };
 
-    await updateDoc(portfolioRef, {
+    await setDoc(portfolioRef, {
       transactions: arrayUnion(transactionWithMetadata),
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     return { success: true };
   } catch (error) {
     console.error('Error recording transaction:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
@@ -158,12 +161,12 @@ export const buyStock = async (
     }
 
     // Save portfolio
-    const portfolioRef = doc(db, 'portfolios', userId);
-    await updateDoc(portfolioRef, {
+    const portfolioRef = portfolioDocRef(userId);
+    await setDoc(portfolioRef, {
       balance: newBalance,
       holdings: newHoldings,
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     // Record transaction
     await recordTransaction(userId, {
@@ -177,7 +180,7 @@ export const buyStock = async (
     return { success: true, newBalance, newHoldings };
   } catch (error) {
     console.error('Error buying stock:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
@@ -211,12 +214,12 @@ export const sellStock = async (
     }
 
     // Save portfolio
-    const portfolioRef = doc(db, 'portfolios', userId);
-    await updateDoc(portfolioRef, {
+    const portfolioRef = portfolioDocRef(userId);
+    await setDoc(portfolioRef, {
       balance: newBalance,
       holdings: newHoldings,
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     // Record transaction
     await recordTransaction(userId, {
@@ -230,6 +233,6 @@ export const sellStock = async (
     return { success: true, newBalance, newHoldings };
   } catch (error) {
     console.error('Error selling stock:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };

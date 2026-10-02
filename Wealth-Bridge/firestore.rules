@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function hasRequiredMeta() {
+      return request.resource.data.uid == request.auth.uid
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.updatedAt != null;
+    }
+
+    // createdAt must never change once set. On create there is no prior doc.
+    function createdAtUnchanged() {
+      return !('createdAt' in resource.data)
+        || resource.data.createdAt == request.resource.data.createdAt;
+    }
+
+    function validSessionBase(uid) {
+      return request.resource.data.uid == uid
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.status in ['draft', 'submitted', 'analyzed', 'analysis_error']
+        && request.resource.data.updatedAt != null;
+    }
+
+    function hasSubmittedFields() {
+      return request.resource.data.profile != null
+        && request.resource.data.occupationIncome != null
+        && request.resource.data.goals != null
+        && request.resource.data.dti != null
+        && request.resource.data.creditReport != null;
+    }
+
+    // Public, read-only reference data. Written from the console / admin only.
+    match /mentors/{mentorId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && hasRequiredMeta();
+      allow update: if isOwner(uid)
+        && hasRequiredMeta()
+        && createdAtUnchanged();
+      allow delete: if false;
+
+      // ── Credit builder sessions ──────────────────────────────────────────
+      match /credit_builder_sessions/{sessionId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && validSessionBase(uid);
+        allow update: if isOwner(uid)
+          && validSessionBase(uid)
+          && createdAtUnchanged()
+          && (
+            request.resource.data.status == 'draft'
+            || (request.resource.data.status == 'submitted' && hasSubmittedFields())
+            || request.resource.data.status == 'analyzed'
+            || request.resource.data.status == 'analysis_error'
+          );
+        allow delete: if false;
+
+        match /analysis_versions/{versionId} {
+          allow read: if isOwner(uid);
+          allow create: if isOwner(uid)
+            && request.resource.data.uid == uid
+            && request.resource.data.schemaVersion is int
+            && request.resource.data.createdAt != null;
+          allow update, delete: if false;
+        }
+      }
+
+      // ── Per-user app state ───────────────────────────────────────────────
+      // Ownership is carried by the path, so reads of not-yet-created docs
+      // resolve correctly instead of failing on a missing `resource`.
+      match /credit_scores/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /progress/{moduleId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /chat/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /portfolio/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /mentorship_sessions/{sessionId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

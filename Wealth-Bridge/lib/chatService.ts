@@ -1,12 +1,13 @@
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
   serverTimestamp,
-  arrayUnion 
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 export interface ChatMessage {
   id: number;
@@ -21,11 +22,13 @@ export interface ChatHistory {
   lastUpdated: Date;
 }
 
+// Owned by the user via the document path — see firestore.rules.
+const chatRef = (userId: string) => doc(db, 'users', userId, 'chat', 'history');
+
 // Get chat history
 export const getChatHistory = async (userId: string) => {
   try {
-    const chatRef = doc(db, 'chatMessages', userId);
-    const chatDoc = await getDoc(chatRef);
+    const chatDoc = await getDoc(chatRef(userId));
 
     if (chatDoc.exists()) {
       return { success: true, data: chatDoc.data() as ChatHistory };
@@ -33,7 +36,7 @@ export const getChatHistory = async (userId: string) => {
     return { success: true, data: null };
   } catch (error) {
     console.error('Error getting chat history:', error);
-    return { success: false, error };
+    return { success: false, data: null, message: describeFirestoreError(error) };
   }
 };
 
@@ -43,9 +46,9 @@ export const saveMessage = async (
   message: Omit<ChatMessage, 'id' | 'timestamp'>
 ) => {
   try {
-    const chatRef = doc(db, 'chatMessages', userId);
-    const chatDoc = await getDoc(chatRef);
-    
+    const ref = chatRef(userId);
+    const chatDoc = await getDoc(ref);
+
     const newMessage = {
       ...message,
       id: Date.now(),
@@ -53,12 +56,12 @@ export const saveMessage = async (
     };
 
     if (chatDoc.exists()) {
-      await updateDoc(chatRef, {
+      await updateDoc(ref, {
         messages: arrayUnion(newMessage),
         updatedAt: serverTimestamp(),
       });
     } else {
-      await setDoc(chatRef, {
+      await setDoc(ref, {
         userId,
         messages: [newMessage],
         createdAt: serverTimestamp(),
@@ -69,16 +72,14 @@ export const saveMessage = async (
     return { success: true };
   } catch (error) {
     console.error('Error saving message:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
 // Clear chat history
 export const clearChatHistory = async (userId: string) => {
   try {
-    const chatRef = doc(db, 'chatMessages', userId);
-    
-    await setDoc(chatRef, {
+    await setDoc(chatRef(userId), {
       userId,
       messages: [],
       updatedAt: serverTimestamp(),
@@ -87,6 +88,6 @@ export const clearChatHistory = async (userId: string) => {
     return { success: true };
   } catch (error) {
     console.error('Error clearing chat history:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };

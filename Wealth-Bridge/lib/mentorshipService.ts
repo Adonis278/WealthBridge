@@ -1,15 +1,14 @@
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
   getDocs,
+  updateDoc,
   collection,
-  query,
-  where,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 export interface MentorSession {
   id: string;
@@ -33,21 +32,28 @@ export interface MentorData {
   available: boolean;
 }
 
-// Get all mentors
+// Bookings live under the booking user — see firestore.rules.
+const sessionsCollection = (userId: string) =>
+  collection(db, 'users', userId, 'mentorship_sessions');
+
+const sessionRef = (userId: string, sessionId: string) =>
+  doc(db, 'users', userId, 'mentorship_sessions', sessionId);
+
+// Get all mentors. `mentors` is public read-only reference data; it is seeded
+// from the Firebase console, not written by the app.
 export const getMentors = async () => {
   try {
-    const mentorsRef = collection(db, 'mentors');
-    const mentorsSnapshot = await getDocs(mentorsRef);
-    
-    const mentors = mentorsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
+    const mentorsSnapshot = await getDocs(collection(db, 'mentors'));
+
+    const mentors = mentorsSnapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data()
     })) as MentorData[];
 
     return { success: true, data: mentors };
   } catch (error) {
     console.error('Error getting mentors:', error);
-    return { success: false, error };
+    return { success: false, data: [], message: describeFirestoreError(error) };
   }
 };
 
@@ -60,10 +66,9 @@ export const bookSession = async (
   time: string
 ) => {
   try {
-    const sessionId = `${userId}_${mentorId}_${Date.now()}`;
-    const sessionRef = doc(db, 'mentorshipSessions', sessionId);
+    const sessionId = `${mentorId}_${Date.now()}`;
 
-    const sessionData = {
+    await setDoc(sessionRef(userId, sessionId), {
       id: sessionId,
       userId,
       mentorId,
@@ -72,52 +77,33 @@ export const bookSession = async (
       time,
       status: 'scheduled',
       createdAt: serverTimestamp(),
-    };
-
-    await setDoc(sessionRef, sessionData);
-
-    // Update mentor's session count
-    const mentorRef = doc(db, 'mentors', mentorId);
-    const mentorDoc = await getDoc(mentorRef);
-    
-    if (mentorDoc.exists()) {
-      const currentSessions = mentorDoc.data().sessions || 0;
-      await updateDoc(mentorRef, {
-        sessions: currentSessions + 1,
-      });
-    }
+      updatedAt: serverTimestamp(),
+    });
 
     return { success: true, sessionId };
   } catch (error) {
     console.error('Error booking session:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };
 
-// Get user's mentorship sessions
+// Get the signed-in user's mentorship sessions
 export const getUserSessions = async (userId: string) => {
   try {
-    const sessionsRef = collection(db, 'mentorshipSessions');
-    const q = query(sessionsRef, where('userId', '==', userId));
-    const sessionsSnapshot = await getDocs(q);
-
-    const sessions = sessionsSnapshot.docs.map(doc => 
-      doc.data()
-    ) as MentorSession[];
+    const snapshot = await getDocs(sessionsCollection(userId));
+    const sessions = snapshot.docs.map((item) => item.data()) as MentorSession[];
 
     return { success: true, data: sessions };
   } catch (error) {
     console.error('Error getting sessions:', error);
-    return { success: false, error };
+    return { success: false, data: [], message: describeFirestoreError(error) };
   }
 };
 
 // Cancel a session
-export const cancelSession = async (sessionId: string) => {
+export const cancelSession = async (userId: string, sessionId: string) => {
   try {
-    const sessionRef = doc(db, 'mentorshipSessions', sessionId);
-    
-    await updateDoc(sessionRef, {
+    await updateDoc(sessionRef(userId, sessionId), {
       status: 'canceled',
       updatedAt: serverTimestamp(),
     });
@@ -125,42 +111,34 @@ export const cancelSession = async (sessionId: string) => {
     return { success: true };
   } catch (error) {
     console.error('Error canceling session:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };
 
 // Mark session as completed
-export const completeSession = async (sessionId: string) => {
+export const completeSession = async (userId: string, sessionId: string) => {
   try {
-    const sessionRef = doc(db, 'mentorshipSessions', sessionId);
-    
-    await updateDoc(sessionRef, {
+    await updateDoc(sessionRef(userId, sessionId), {
       status: 'completed',
       completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     return { success: true };
   } catch (error) {
     console.error('Error completing session:', error);
-    return { success: false, error };
+    return { success: false, message: describeFirestoreError(error) };
   }
 };
 
-// Add or update mentor
-export const addMentor = async (mentorData: Omit<MentorData, 'id'>) => {
+// Read a single mentor record.
+export const getMentor = async (mentorId: string) => {
   try {
-    const mentorId = mentorData.name.toLowerCase().replace(/\s+/g, '-');
-    const mentorRef = doc(db, 'mentors', mentorId);
-
-    await setDoc(mentorRef, {
-      ...mentorData,
-      id: mentorId,
-      createdAt: serverTimestamp(),
-    });
-
-    return { success: true, mentorId };
+    const snapshot = await getDoc(doc(db, 'mentors', mentorId));
+    if (!snapshot.exists()) return { success: true, data: null };
+    return { success: true, data: { id: snapshot.id, ...snapshot.data() } as MentorData };
   } catch (error) {
-    console.error('Error adding mentor:', error);
-    return { success: false, error };
+    console.error('Error getting mentor:', error);
+    return { success: false, data: null, message: describeFirestoreError(error) };
   }
 };

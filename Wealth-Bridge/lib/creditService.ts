@@ -1,12 +1,13 @@
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
   serverTimestamp,
-  arrayUnion 
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { describeFirestoreError } from '@/lib/firestoreErrors';
 
 export interface CreditScoreHistory {
   score: number;
@@ -38,15 +39,16 @@ export interface CreditData {
   lastUpdated: Date;
 }
 
+// Owned by the user via the document path — see firestore.rules.
+const creditScoreRef = (userId: string) => doc(db, 'users', userId, 'credit_scores', 'current');
+
 // Save credit score data
 export const saveCreditScore = async (
   userId: string,
   scoreData: Partial<CreditData>
 ) => {
   try {
-    const creditRef = doc(db, 'creditScores', userId);
-    
-    await setDoc(creditRef, {
+    await setDoc(creditScoreRef(userId), {
       userId,
       ...scoreData,
       updatedAt: serverTimestamp(),
@@ -55,15 +57,14 @@ export const saveCreditScore = async (
     return { success: true };
   } catch (error) {
     console.error('Error saving credit score:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
 // Get user's credit score data
 export const getCreditScore = async (userId: string) => {
   try {
-    const creditRef = doc(db, 'creditScores', userId);
-    const creditDoc = await getDoc(creditRef);
+    const creditDoc = await getDoc(creditScoreRef(userId));
 
     if (creditDoc.exists()) {
       return { success: true, data: creditDoc.data() as CreditData };
@@ -71,7 +72,7 @@ export const getCreditScore = async (userId: string) => {
     return { success: true, data: null };
   } catch (error) {
     console.error('Error getting credit score:', error);
-    return { success: true, data: null, warning: 'Credit data unavailable right now.' };
+    return { success: false, data: null, message: describeFirestoreError(error) };
   }
 };
 
@@ -81,12 +82,12 @@ export const updateCreditScore = async (
   newScore: number
 ) => {
   try {
-    const creditRef = doc(db, 'creditScores', userId);
+    const creditRef = creditScoreRef(userId);
     const creditDoc = await getDoc(creditRef);
-    
-    let previousScore = 650; // default
+
+    let previousScore = newScore;
     if (creditDoc.exists()) {
-      previousScore = creditDoc.data().currentScore || 650;
+      previousScore = creditDoc.data().currentScore ?? newScore;
     }
 
     const scoreChange = newScore - previousScore;
@@ -107,7 +108,7 @@ export const updateCreditScore = async (
     return { success: true };
   } catch (error) {
     console.error('Error updating credit score:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };
 
@@ -117,13 +118,13 @@ export const completeTask = async (
   taskId: number
 ) => {
   try {
-    const creditRef = doc(db, 'creditScores', userId);
+    const creditRef = creditScoreRef(userId);
     const creditDoc = await getDoc(creditRef);
-    
+
     if (creditDoc.exists()) {
       const tasks = creditDoc.data().tasks || [];
-      const updatedTasks = tasks.map((task: CreditTask) => 
-        task.id === taskId 
+      const updatedTasks = tasks.map((task: CreditTask) =>
+        task.id === taskId
           ? { ...task, completed: true, completedAt: new Date() }
           : task
       );
@@ -135,9 +136,9 @@ export const completeTask = async (
 
       return { success: true };
     }
-    return { success: false, error: 'Credit data not found' };
+    return { success: false, message: 'No credit data to update yet.' };
   } catch (error) {
     console.error('Error completing task:', error);
-    return { success: false, error };
+    return { success: false, error, message: describeFirestoreError(error) };
   }
 };

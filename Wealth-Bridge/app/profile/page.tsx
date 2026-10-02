@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { FaUser, FaEnvelope, FaMapMarkerAlt, FaCamera, FaSave, FaBell, FaMoon, FaBolt } from 'react-icons/fa';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import AuthGuard from '@/components/AuthGuard';
 import { getUserProfile, updateUserProfile, uploadProfilePhoto, updatePreferences } from '@/lib/userService';
 import { getUserStats } from '@/lib/gamificationService';
 import dynamic from 'next/dynamic';
@@ -21,7 +22,7 @@ const AnalysisHistory = dynamic(() => import('@/components/profile/AnalysisHisto
   ),
 });
 
-export default function ProfilePage() {
+function ProfileContent() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -46,10 +47,7 @@ export default function ProfilePage() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
+    if (!user) return;
 
     const loadProfile = async () => {
       setLoading(true);
@@ -441,5 +439,13 @@ export default function ProfilePage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <AuthGuard>
+      <ProfileContent />
+    </AuthGuard>
   );
 }
