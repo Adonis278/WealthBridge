@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WealthBridge">
+  <!-- Brand orange (the primary token, #C85C0E) deepening across the field,
+       with the leaf mark from the WealthBridge wordmark. Solid field plus a
+       single light glyph so it stays legible at 16px in a browser tab. -->
+  <defs>
+    <linearGradient id="wb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E07416" />
+      <stop offset="1" stop-color="#C85C0E" />
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="url(#wb)" />
+
+  <!-- Leaf blade. Control points sit well off the chord so the blade carries
+       enough light mass to survive a 16px downscale. -->
+  <path
+    d="M51 11C53 34 34 53 11 51C9 28 28 9 51 11Z"
+    fill="#FDF3E3"
+  />
+  <!-- Midrib. Kept thin: at 16px a heavy vein bisects the blade into two
+       specks instead of reading as one leaf. -->
+  <path
+    d="M12 52C12 52 22 36 34 26C42 19.3 50 12 50 12"
+    stroke="#C85C0E"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>
