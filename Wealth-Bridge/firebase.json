@@ -19,5 +19,22 @@
       "firebase-debug.*.log",
       "**/*.local"
     ]
+  },
+  "hosting": {
+    "site": "wealthbridge",
+    "public": "hosting-redirect",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "redirects": [
+      {
+        "source": "/",
+        "destination": "https://wealthbridge--wealth-bridge-d3efd.us-central1.hosted.app/",
+        "type": 301
+      },
+      {
+        "source": "/:path*",
+        "destination": "https://wealthbridge--wealth-bridge-d3efd.us-central1.hosted.app/:path*",
+        "type": 301
+      }
+    ]
   }
 }
