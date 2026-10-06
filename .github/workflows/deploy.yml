@@ -1,0 +1,107 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never cancel a deploy that is already running — a half-applied rollout is
+# worse than a redundant one. Later pushes queue behind the current deploy.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # for Workload Identity Federation, if you switch to it
+
+env:
+  FIREBASE_PROJECT: wealth-bridge-d3efd
+
+jobs:
+  deploy:
+    name: Build, then deploy rules and app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Wealth-Bridge/package-lock.json
+
+      - name: Install
+        working-directory: Wealth-Bridge
+        run: npm ci
+
+      - name: Generate build env from apphosting.yaml
+        run: node scripts/apphosting-env.mjs --force
+
+      # Build here as a gate. App Hosting rebuilds from source during the
+      # rollout, but failing fast on a broken build avoids shipping a backend
+      # that cannot start.
+      - name: Typecheck, lint and build
+        working-directory: Wealth-Bridge
+        run: |
+          npx tsc --noEmit
+          npx next lint
+          npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Validate deployment
+        working-directory: Wealth-Bridge
+        run: |
+          npx firebase@15 deploy \
+            --only firestore:rules,storage,apphosting \
+            --project "$FIREBASE_PROJECT" \
+            --dry-run
+
+      # Rules go first, deliberately.
+      #
+      # The app reads and writes paths like users/{uid}/credit_scores. If the
+      # code ships before the rules that permit those paths, every write is
+      # denied until the rules catch up. Deploying rules first means the worst
+      # case is rules that allow slightly more than the live code uses, which
+      # is harmless, rather than a live app that cannot write.
+      - name: Deploy Firestore and Storage rules
+        working-directory: Wealth-Bridge
+        run: |
+          npx firebase@15 deploy \
+            --only firestore:rules,storage \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive
+
+      - name: Deploy App Hosting backend
+        working-directory: Wealth-Bridge
+        run: |
+          npx firebase@15 deploy \
+            --only apphosting \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive \
+            --force
+
+      # `firebase deploy` has exited 0 without deploying when firebase.json was
+      # misconfigured, so success is confirmed against the live site rather
+      # than trusted from the exit code.
+      - name: Verify the deployment is live
+        run: |
+          URL="https://wealthbridge--${FIREBASE_PROJECT}.us-central1.hosted.app"
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/" --max-time 30 || true)
+            if [ "$code" = "200" ]; then
+              echo "Live site responded 200"
+              exit 0
+            fi
+            echo "Attempt $i: got '$code', retrying..."
+            sleep 15
+          done
+          echo "::error::Live site did not return 200 after the deploy"
+          exit 1
