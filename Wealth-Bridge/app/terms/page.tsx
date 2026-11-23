@@ -1,3 +1,12 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Terms & Conditions',
+  description:
+    'How WealthBridge handles your credit report data, what the service does and does not promise, and the terms of use.',
+  alternates: { canonical: '/terms' },
+};
+
 import React from 'react';
 
 export default function TermsPage() {
