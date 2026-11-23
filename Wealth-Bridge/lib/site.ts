@@ -4,15 +4,15 @@
  * SITE_URL is the single place the public origin is defined. Change it here and
  * canonical tags, Open Graph URLs, robots.txt and sitemap.xml all follow.
  *
- * It currently points at the App Hosting backend because that is what actually
- * serves the app — wealthbridge.web.app 301s here. Pointing canonicals at a URL
- * that only redirects would tell Google to index a redirect, so the canonical
- * has to match the origin that really responds. If the runtime moves onto
- * Firebase Hosting (or a real custom domain is attached), change this one line.
+ * The app is served from Firebase Hosting at wealthbridge.web.app (the Next
+ * runtime is a Cloud Function behind it), so that is the canonical origin.
+ * The App Hosting backend at *.hosted.app still runs as a fallback and serves
+ * the same content, which is why these canonical tags matter: they tell Google
+ * which of the two origins to index.
  */
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
-  'https://wealthbridge--wealth-bridge-d3efd.us-central1.hosted.app';
+  'https://wealthbridge.web.app';
 
 export const SITE_NAME = 'WealthBridge';
 
